@@ -3,7 +3,7 @@ import { GPS103Parser } from './gps103Parser';
 import { prisma } from '../config/database';
 import { broadcastPositionUpdate } from '../websocket/wsServer';
 
-const TCP_PORT = process.env.TCP_PORT || 8841;
+const TCP_PORT = Number(process.env.TCP_PORT) || 8841;
 
 // Map to store IMEI for each socket connection
 const socketImeiMap = new Map<net.Socket, string>();
