@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = __DEV__
   ? 'http://192.168.0.69:3000/api'
-  : 'https://your-production-url.com/api';
+  : 'https://cl-geo-tracker-production.up.railway.app/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
