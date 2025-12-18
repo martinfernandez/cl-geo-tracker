@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String             @id @default(uuid())
+  email                   String             @unique
+  password                String
+  name                    String
+  areaOfInterestLatitude  Float?
+  areaOfInterestLongitude Float?
+  areaOfInterestRadius    Float?             @default(5000) // meters, max 10000
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  devices                 Device[]
+  events                  Event[]
+  reactions               Reaction[]
+  comments                Comment[]
+  commentLikes            CommentLike[]
+  sentNotifications       Notification[]     @relation("NotificationSender")
+  receivedNotifications   Notification[]     @relation("NotificationReceiver")
+  createdAreas            AreaOfInterest[]   @relation("AreaCreator")
+  areaMemberships         AreaMembership[]
+  sentAreaInvitations     AreaInvitation[]   @relation("InvitationSender")
+  receivedAreaInvitations AreaInvitation[]   @relation("InvitationReceiver")
+}
+
+model Device {
+  id        String   @id @default(uuid())
+  imei      String   @unique
+  name      String?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  positions Position[]
+  events    Event[]
+
+  @@index([userId])
+}
+
+model Position {
+  id        String   @id @default(uuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id])
+  latitude  Float
+  longitude Float
+  altitude  Float?
+  speed     Float?
+  heading   Float?
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([timestamp])
+}
+
+model Event {
+  id               String       @id @default(uuid())
+  deviceId         String?
+  device           Device?      @relation(fields: [deviceId], references: [id])
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  type             EventType
+  description      String
+  latitude         Float
+  longitude        Float
+  status           EventStatus  @default(IN_PROGRESS)
+  isPublic         Boolean      @default(true)
+  isUrgent         Boolean      @default(false)
+  realTimeTracking Boolean      @default(false)
+  imageUrl         String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  reactions        Reaction[]
+  comments         Comment[]
+
+  @@index([deviceId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isPublic, status])
+  @@index([latitude, longitude])
+  @@index([isUrgent, status])
+  @@index([realTimeTracking, status])
+}
+
+enum EventType {
+  THEFT
+  LOST
+  ACCIDENT
+  FIRE
+}
+
+enum EventStatus {
+  IN_PROGRESS
+  CLOSED
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model Comment {
+  id              String        @id @default(uuid())
+  eventId         String
+  event           Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content         String
+  parentCommentId String?
+  parentComment   Comment?      @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies         Comment[]     @relation("CommentReplies")
+  likes           CommentLike[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([parentCommentId])
+}
+
+model CommentLike {
+  id        String   @id @default(uuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@index([userId])
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  type       NotificationType
+  senderId   String?
+  sender     User?            @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User             @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  eventId    String?
+  commentId  String?
+  areaId     String?
+  content    String
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  @@index([receiverId, isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  EVENT_REACTION
+  EVENT_COMMENT
+  COMMENT_REPLY
+  COMMENT_LIKE
+  AREA_INVITATION
+  AREA_JOIN_REQUEST
+  AREA_JOIN_ACCEPTED
+  AREA_EVENT_NOTIFICATION
+}
+
+model AreaOfInterest {
+  id          String              @id @default(uuid())
+  name        String
+  description String?
+  latitude    Float
+  longitude   Float
+  radius      Float               // meters
+  visibility  AreaVisibility      @default(PUBLIC)
+  creatorId   String
+  creator     User                @relation("AreaCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members     AreaMembership[]
+  invitations AreaInvitation[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([creatorId])
+  @@index([visibility])
+  @@index([name])
+  @@index([latitude, longitude])
+}
+
+enum AreaVisibility {
+  PUBLIC              // Searchable, anyone can join
+  PRIVATE_SHAREABLE   // Searchable, requires approval
+  PRIVATE             // Not searchable, invite-only
+}
+
+model AreaMembership {
+  id        String         @id @default(uuid())
+  areaId    String
+  area      AreaOfInterest @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MemberRole     @default(MEMBER)
+  createdAt DateTime       @default(now())
+
+  @@unique([areaId, userId])
+  @@index([areaId])
+  @@index([userId])
+}
+
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
+
+model AreaInvitation {
+  id         String             @id @default(uuid())
+  areaId     String
+  area       AreaOfInterest     @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  senderId   String?
+  sender     User?              @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User               @relation("InvitationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  status     InvitationStatus   @default(PENDING)
+  type       InvitationType     @default(INVITATION)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([areaId, receiverId, status])
+  @@index([areaId])
+  @@index([receiverId, status])
+  @@index([senderId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum InvitationType {
+  INVITATION      // Creator invites user
+  JOIN_REQUEST    // User requests to join
+}
