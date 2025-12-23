@@ -6,12 +6,31 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "APP_ENV": "development"
+      },
       "ios": {
         "resourceClass": "m-medium"
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "staging"
+      },
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "APP_ENV": "production"
+      },
       "ios": {
         "simulator": false,
         "resourceClass": "m-medium"
@@ -21,6 +40,9 @@
       }
     },
     "production": {
+      "env": {
+        "APP_ENV": "production"
+      },
       "ios": {
         "resourceClass": "m-medium"
       },

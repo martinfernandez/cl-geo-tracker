@@ -15,6 +15,15 @@ model User {
   areaOfInterestLatitude  Float?
   areaOfInterestLongitude Float?
   areaOfInterestRadius    Float?             @default(5000) // meters, max 10000
+
+  // Privacy settings
+  showName                Boolean            @default(true)
+  showEmail               Boolean            @default(false)
+  showPublicEvents        Boolean            @default(true)
+
+  // Push notifications
+  expoPushToken           String?
+
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
   devices                 Device[]
@@ -28,20 +37,60 @@ model User {
   areaMemberships         AreaMembership[]
   sentAreaInvitations     AreaInvitation[]   @relation("InvitationSender")
   receivedAreaInvitations AreaInvitation[]   @relation("InvitationReceiver")
+
+  // Messaging relations
+  sentMessages            Message[]          @relation("MessageSender")
+  receivedMessages        Message[]          @relation("MessageReceiver")
+  conversations           ConversationParticipant[]
+
+  // Group relations
+  createdGroups              Group[]            @relation("GroupCreator")
+  groupMemberships           GroupMembership[]
+  sentGroupInvitations       GroupInvitation[]  @relation("GroupInvitationSender")
+  receivedGroupInvitations   GroupInvitation[]  @relation("GroupInvitationReceiver")
+  phoneDevice                PhoneDevice?
+
+  // Found object chat relations
+  ownedFoundChats            FoundObjectChat[]  @relation("OwnedFoundChats")
+  finderFoundChats           FoundObjectChat[]  @relation("FoundChats")
+}
+
+enum DeviceType {
+  GPS_TRACKER    // Dispositivo JX10 con IMEI
+  TAGGED_OBJECT  // Objeto con QR sin GPS (llaves, billetera, etc)
 }
 
 model Device {
-  id        String   @id @default(uuid())
-  imei      String   @unique
+  id        String     @id @default(uuid())
+  type      DeviceType @default(GPS_TRACKER)
+  imei      String?    @unique  // Opcional para TAGGED_OBJECT
   name      String?
+  color     String?    @default("#007AFF") // Color for map markers
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?      @relation(fields: [userId], references: [id])
+
+  // QR Code settings
+  qrCode    String     @unique @default(uuid())  // Código único para QR
+  qrEnabled Boolean    @default(true)  // Si el QR está activo
+
+  // Geofence lock settings
+  isLocked      Boolean  @default(false)
+  lockLatitude  Float?
+  lockLongitude Float?
+  lockRadius    Float    @default(0)  // meters, 0 = no movement allowed
+  lockedAt      DateTime?
+  lastAlertAt   DateTime?  // To prevent spam notifications
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   positions Position[]
   events    Event[]
+  foundChats FoundObjectChat[]  // Chats de objetos encontrados
 
   @@index([userId])
+  @@index([isLocked])
+  @@index([qrCode])
+  @@index([type])
 }
 
 model Position {
@@ -61,27 +110,31 @@ model Position {
 }
 
 model Event {
-  id               String       @id @default(uuid())
+  id               String         @id @default(uuid())
   deviceId         String?
-  device           Device?      @relation(fields: [deviceId], references: [id])
+  device           Device?        @relation(fields: [deviceId], references: [id])
   userId           String
-  user             User         @relation(fields: [userId], references: [id])
+  user             User           @relation(fields: [userId], references: [id])
+  groupId          String?
+  group            Group?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
   type             EventType
   description      String
   latitude         Float
   longitude        Float
-  status           EventStatus  @default(IN_PROGRESS)
-  isPublic         Boolean      @default(true)
-  isUrgent         Boolean      @default(false)
-  realTimeTracking Boolean      @default(false)
+  status           EventStatus    @default(IN_PROGRESS)
+  isPublic         Boolean        @default(true)
+  isUrgent         Boolean        @default(false)
+  realTimeTracking Boolean        @default(false)
   imageUrl         String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   reactions        Reaction[]
   comments         Comment[]
+  conversations    Conversation[]
 
   @@index([deviceId])
   @@index([userId])
+  @@index([groupId])
   @@index([createdAt])
   @@index([isPublic, status])
   @@index([latitude, longitude])
@@ -90,6 +143,7 @@ model Event {
 }
 
 enum EventType {
+  GENERAL
   THEFT
   LOST
   ACCIDENT
@@ -156,6 +210,7 @@ model Notification {
   eventId    String?
   commentId  String?
   areaId     String?
+  chatId     String?          // For found object chats
   content    String
   isRead     Boolean          @default(false)
   createdAt  DateTime         @default(now())
@@ -173,6 +228,12 @@ enum NotificationType {
   AREA_JOIN_REQUEST
   AREA_JOIN_ACCEPTED
   AREA_EVENT_NOTIFICATION
+  NEW_MESSAGE
+  GROUP_INVITATION
+  GROUP_JOIN_ACCEPTED
+  DEVICE_MOVEMENT_ALERT
+  FOUND_OBJECT
+  FOUND_OBJECT_MESSAGE
 }
 
 model AreaOfInterest {
@@ -203,13 +264,16 @@ enum AreaVisibility {
 }
 
 model AreaMembership {
-  id        String         @id @default(uuid())
-  areaId    String
-  area      AreaOfInterest @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      MemberRole     @default(MEMBER)
-  createdAt DateTime       @default(now())
+  id                   String         @id @default(uuid())
+  areaId               String
+  area                 AreaOfInterest @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                 MemberRole     @default(MEMBER)
+  notificationsEnabled Boolean        @default(true)
+  newEventsCount       Int            @default(0)
+  lastSeenAt           DateTime       @default(now())
+  createdAt            DateTime       @default(now())
 
   @@unique([areaId, userId])
   @@index([areaId])
@@ -249,4 +313,203 @@ enum InvitationStatus {
 enum InvitationType {
   INVITATION      // Creator invites user
   JOIN_REQUEST    // User requests to join
+}
+
+model Conversation {
+  id            String                      @id @default(uuid())
+  eventId       String?
+  event         Event?                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  groupId       String?                     @unique
+  group         Group?                      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  isGroupChat   Boolean                     @default(false)
+  participants  ConversationParticipant[]
+  messages      Message[]
+  lastMessageAt DateTime?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  @@index([eventId])
+  @@index([groupId])
+  @@index([lastMessageAt])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unreadCount    Int          @default(0)
+  lastReadAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId     String?
+  receiver       User?        @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  content        String       @db.Text
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+// =====================
+// USER GROUPS
+// =====================
+
+model Group {
+  id           String            @id @default(uuid())
+  name         String
+  description  String?
+  creatorId    String
+  creator      User              @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members      GroupMembership[]
+  invitations  GroupInvitation[]
+  events       Event[]
+  conversation Conversation?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([creatorId])
+  @@index([name])
+}
+
+model GroupMembership {
+  id                     String     @id @default(uuid())
+  groupId                String
+  group                  Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId                 String
+  user                   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                   MemberRole @default(MEMBER)
+  locationSharingEnabled Boolean    @default(false)
+  createdAt              DateTime   @default(now())
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model GroupInvitation {
+  id         String           @id @default(uuid())
+  groupId    String
+  group      Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User             @relation("GroupInvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String?
+  receiver   User?            @relation("GroupInvitationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  email      String?          // For non-registered users
+  status     InvitationStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([groupId])
+  @@index([receiverId])
+  @@index([senderId])
+  @@index([email])
+}
+
+model PendingEmailInvitation {
+  id        String   @id @default(uuid())
+  email     String
+  groupId   String
+  senderId  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([email, groupId])
+  @@index([email])
+}
+
+// =====================
+// PHONE DEVICE TRACKING
+// =====================
+
+model PhoneDevice {
+  id             String          @id @default(uuid())
+  userId         String          @unique
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String          @default("Mi Teléfono")
+  isActive       Boolean         @default(false)
+  lastPositionAt DateTime?
+  positions      PhonePosition[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model PhonePosition {
+  id            String      @id @default(uuid())
+  phoneDeviceId String
+  phoneDevice   PhoneDevice @relation(fields: [phoneDeviceId], references: [id], onDelete: Cascade)
+  latitude      Float
+  longitude     Float
+  altitude      Float?
+  speed         Float?
+  heading       Float?
+  accuracy      Float?
+  timestamp     DateTime
+  createdAt     DateTime    @default(now())
+
+  @@index([phoneDeviceId])
+  @@index([timestamp])
+  @@index([phoneDeviceId, timestamp])
+}
+
+// =====================
+// FOUND OBJECT QR CHATS
+// =====================
+
+enum FoundChatStatus {
+  ACTIVE
+  RESOLVED   // Objeto recuperado
+  CLOSED     // Chat cerrado
+}
+
+model FoundObjectChat {
+  id              String          @id @default(uuid())
+  deviceId        String
+  device          Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  ownerId         String          // Dueño del dispositivo
+  owner           User            @relation("OwnedFoundChats", fields: [ownerId], references: [id], onDelete: Cascade)
+  finderId        String?         // Usuario registrado que encontró (null si anónimo)
+  finder          User?           @relation("FoundChats", fields: [finderId], references: [id], onDelete: SetNull)
+  finderSessionId String?         // ID de sesión para usuarios anónimos
+  finderName      String?         // Nombre opcional del que encontró
+  status          FoundChatStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  messages        FoundObjectMessage[]
+
+  @@index([deviceId])
+  @@index([ownerId])
+  @@index([finderId])
+  @@index([finderSessionId])
+  @@index([status])
+}
+
+model FoundObjectMessage {
+  id        String          @id @default(uuid())
+  chatId    String
+  chat      FoundObjectChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  isOwner   Boolean         // true = mensaje del dueño, false = del que encontró
+  content   String          @db.Text
+  createdAt DateTime        @default(now())
+
+  @@index([chatId])
+  @@index([createdAt])
 }

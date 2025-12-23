@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,14 +10,16 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
+  Pressable,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { eventApi, reactionApi, commentApi, Comment, api } from '../services/api';
+import { useToast } from '../contexts/ToastContext';
+import { BASE_URL } from '../config/environment';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -40,6 +42,7 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
 
 export default function EventDetailScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
+  const { showSuccess, showError } = useToast();
   const [event, setEvent] = useState<any>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +54,20 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   >([]);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [eventConversations, setEventConversations] = useState<any[]>([]);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [commentToDelete, setCommentToDelete] = useState<string | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const commentInputRef = useRef<TextInput>(null);
+
+  const handleScrollToComments = () => {
+    // Scroll to bottom and focus the comment input
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+    setTimeout(() => {
+      commentInputRef.current?.focus();
+    }, 300);
+  };
 
   useEffect(() => {
     loadEventDetails();
@@ -65,6 +82,27 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       console.error('Error loading current user:', error);
     }
   };
+
+  // Load conversations for event owner
+  const loadEventConversations = async () => {
+    if (!event || !currentUserId || event.userId !== currentUserId) return;
+
+    try {
+      const response = await api.get(`/events/${eventId}/conversations`);
+      setEventConversations(response.data);
+      const totalUnread = response.data.reduce((sum: number, conv: any) => sum + (conv.unreadCount || 0), 0);
+      setUnreadMessageCount(totalUnread);
+    } catch (error) {
+      console.error('Error loading event conversations:', error);
+    }
+  };
+
+  // Load conversations when event and currentUserId are available
+  useEffect(() => {
+    if (event && currentUserId && event.userId === currentUserId && event.isUrgent) {
+      loadEventConversations();
+    }
+  }, [event?.id, currentUserId]);
 
   useEffect(() => {
     if (event?.realTimeTracking && event?.status === 'IN_PROGRESS') {
@@ -86,7 +124,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       setComments(commentsData);
     } catch (error) {
       console.error('Error loading event details:', error);
-      Alert.alert('Error', 'No se pudo cargar el evento');
+      showError('No se pudo cargar el evento');
     } finally {
       setLoading(false);
     }
@@ -117,7 +155,40 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       }));
     } catch (error) {
       console.error('Error toggling reaction:', error);
-      Alert.alert('Error', 'No se pudo actualizar la reacción');
+      showError('No se pudo actualizar la reacción');
+    }
+  };
+
+  const handleOpenChat = async () => {
+    try {
+      const response = await api.post('/conversations', {
+        eventId: event.id,
+        otherUserId: event.userId,
+      });
+      const conversation = response.data;
+      navigation.navigate('Chat' as never, {
+        conversationId: conversation.id,
+        eventId: event.id,
+        otherUserId: event.userId,
+      } as never);
+    } catch (error: any) {
+      console.error('Error opening chat:', error);
+      showError('No se pudo abrir el chat');
+    }
+  };
+
+  const handleOpenEventInbox = () => {
+    if (eventConversations.length === 1) {
+      // If only one conversation, go directly to chat
+      const conv = eventConversations[0];
+      navigation.navigate('Chat' as never, {
+        conversationId: conv.id,
+        eventId: event.id,
+        otherUserId: conv.otherUser?.id,
+      } as never);
+    } else {
+      // If multiple conversations, go to inbox filtered by event
+      navigation.navigate('Inbox' as never, { eventId: event.id } as never);
     }
   };
 
@@ -135,7 +206,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       await loadEventDetails();
     } catch (error) {
       console.error('Error submitting comment:', error);
-      Alert.alert('Error', 'No se pudo enviar el comentario');
+      showError('No se pudo enviar el comentario');
     } finally {
       setSubmitting(false);
     }
@@ -147,13 +218,12 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       await eventApi.update(eventId, { status: newStatus });
       setEvent((prev: any) => ({ ...prev, status: newStatus }));
       setShowActionSheet(false);
-      Alert.alert(
-        'Éxito',
+      showSuccess(
         newStatus === 'CLOSED' ? 'Evento cerrado correctamente' : 'Evento reabierto correctamente'
       );
     } catch (error) {
       console.error('Error toggling event status:', error);
-      Alert.alert('Error', 'No se pudo actualizar el estado del evento');
+      showError('No se pudo actualizar el estado del evento');
     }
   };
 
@@ -195,32 +265,28 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       );
     } catch (error) {
       console.error('Error toggling comment like:', error);
-      Alert.alert('Error', 'No se pudo actualizar el like');
+      showError('No se pudo actualizar el like');
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    Alert.alert(
-      'Eliminar comentario',
-      '¿Estás seguro que quieres eliminar este comentario?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await commentApi.deleteComment(commentId);
-              await loadEventDetails();
-              Alert.alert('Éxito', 'Comentario eliminado');
-            } catch (error) {
-              console.error('Error deleting comment:', error);
-              Alert.alert('Error', 'No se pudo eliminar el comentario');
-            }
-          },
-        },
-      ]
-    );
+  const handleDeleteComment = (commentId: string) => {
+    setCommentToDelete(commentId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteComment = async () => {
+    if (!commentToDelete) return;
+    try {
+      await commentApi.deleteComment(commentToDelete);
+      await loadEventDetails();
+      showSuccess('Comentario eliminado');
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      showError('No se pudo eliminar el comentario');
+    } finally {
+      setShowDeleteConfirm(false);
+      setCommentToDelete(null);
+    }
   };
 
   const renderComment = (comment: Comment, isReply = false) => {
@@ -234,7 +300,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         style={[styles.commentContainer, isReply && styles.replyContainer]}
       >
         <View style={styles.commentHeader}>
-          <Text style={styles.commentAuthor}>{comment.user.name}</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}>
+            <Text style={styles.commentAuthor}>{comment.user.name}</Text>
+          </TouchableOpacity>
           <View style={styles.commentHeaderRight}>
             <Text style={styles.commentDate}>
               {new Date(comment.createdAt).toLocaleDateString()}
@@ -332,7 +400,12 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Map */}
         <View style={styles.mapContainer}>
           <MapView
@@ -358,7 +431,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             {event.realTimeTracking && trackedPositions.length > 1 && (
               <Polyline
                 coordinates={trackedPositions}
-                strokeColor="#FF3B30"
+                strokeColor="#5856D6"
                 strokeWidth={4}
                 geodesic={true}
                 lineCap="round"
@@ -428,9 +501,14 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           <Text style={styles.description}>{event.description}</Text>
 
           <View style={styles.metadata}>
-            <Text style={styles.metadataText}>
-              Reportado por: {event.user.name}
-            </Text>
+            <View style={styles.metadataRow}>
+              <Text style={styles.metadataText}>Reportado por: </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
+              >
+                <Text style={styles.userName}>{event.user.name}</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.metadataText}>
               {new Date(event.createdAt).toLocaleString()}
             </Text>
@@ -444,7 +522,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           {/* Image */}
           {event.imageUrl && (
             <Image
-              source={{ uri: `http://192.168.0.69:3000${event.imageUrl}` }}
+              source={{ uri: `${BASE_URL}${event.imageUrl}` }}
               style={styles.eventImage}
             />
           )}
@@ -465,55 +543,52 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.interactionButton}>
+            <TouchableOpacity
+              style={styles.interactionButton}
+              onPress={handleScrollToComments}
+            >
               <Ionicons name="chatbubble-outline" size={28} color="#262626" />
               <Text style={styles.interactionCount}>
                 {comments.length || 0}
               </Text>
-            </View>
+            </TouchableOpacity>
+
+            {/* Chat button for non-owners of urgent events */}
+            {event.isUrgent && event.userId !== currentUserId && (
+              <TouchableOpacity
+                style={styles.interactionButton}
+                onPress={handleOpenChat}
+              >
+                <Ionicons name="chatbubbles" size={28} color="#007AFF" />
+              </TouchableOpacity>
+            )}
+
+            {/* Chat/Inbox button for event owner when they have messages */}
+            {event.isUrgent && event.userId === currentUserId && eventConversations.length > 0 && (
+              <TouchableOpacity
+                style={styles.interactionButton}
+                onPress={handleOpenEventInbox}
+              >
+                <View>
+                  <Ionicons name="chatbubbles" size={28} color="#007AFF" />
+                  {unreadMessageCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>
+                        {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.interactionCount}>
+                  {eventConversations.length}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Comments Section */}
           <View style={styles.commentsSection}>
             <Text style={styles.sectionTitle}>Comentarios</Text>
-
-            {replyingTo && (
-              <View style={styles.replyingToBar}>
-                <Text style={styles.replyingToText}>
-                  Respondiendo a un comentario
-                </Text>
-                <TouchableOpacity onPress={() => setReplyingTo(null)}>
-                  <Ionicons name="close" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <View style={styles.commentInputContainer}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder={
-                  replyingTo ? 'Escribe una respuesta...' : 'Escribe un comentario...'
-                }
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-                maxLength={500}
-              />
-              <TouchableOpacity
-                onPress={handleSubmitComment}
-                disabled={!commentText.trim() || submitting}
-                style={[
-                  styles.sendButton,
-                  (!commentText.trim() || submitting) && styles.sendButtonDisabled,
-                ]}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color="#007AFF" />
-                ) : (
-                  <Ionicons name="send" size={20} color="#007AFF" />
-                )}
-              </TouchableOpacity>
-            </View>
 
             {comments.length === 0 ? (
               <Text style={styles.noCommentsText}>
@@ -525,8 +600,53 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               </View>
             )}
           </View>
+          {/* Extra padding for fixed input */}
+          <View style={{ height: 80 }} />
         </View>
       </ScrollView>
+
+      {/* Fixed Comment Input at Bottom */}
+      <View style={styles.fixedInputContainer}>
+        {replyingTo && (
+          <View style={styles.replyingToBar}>
+            <Text style={styles.replyingToText}>
+              Respondiendo a un comentario
+            </Text>
+            <TouchableOpacity onPress={() => setReplyingTo(null)}>
+              <Ionicons name="close" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
+        )}
+        <View style={styles.commentInputContainer}>
+          <TextInput
+            ref={commentInputRef}
+            style={styles.commentInput}
+            placeholder={
+              replyingTo ? 'Escribe una respuesta...' : 'Escribe un comentario...'
+            }
+            placeholderTextColor="#8E8E93"
+            value={commentText}
+            onChangeText={setCommentText}
+            multiline
+            maxLength={500}
+            textAlignVertical="center"
+          />
+          <TouchableOpacity
+            onPress={handleSubmitComment}
+            disabled={!commentText.trim() || submitting}
+            style={[
+              styles.sendButton,
+              (!commentText.trim() || submitting) && styles.sendButtonDisabled,
+            ]}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color="#007AFF" />
+            ) : (
+              <Ionicons name="send" size={20} color="#007AFF" />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Action Sheet Modal */}
       <Modal
@@ -565,6 +685,43 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Delete Comment Confirmation Modal */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <Pressable
+          style={styles.deleteModalOverlay}
+          onPress={() => setShowDeleteConfirm(false)}
+        >
+          <Pressable style={styles.deleteModalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.deleteModalIcon}>
+              <Ionicons name="trash-outline" size={48} color="#FF3B30" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar comentario?</Text>
+            <Text style={styles.deleteModalMessage}>
+              Esta accion no se puede deshacer
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.deleteModalButtonSecondary}
+                onPress={() => setShowDeleteConfirm(false)}
+              >
+                <Text style={styles.deleteModalButtonSecondaryText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalButtonPrimary}
+                onPress={confirmDeleteComment}
+              >
+                <Text style={styles.deleteModalButtonPrimaryText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -681,6 +838,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
   },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  userName: {
+    fontSize: 13,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
   eventImage: {
     width: '100%',
     height: 300,
@@ -708,6 +875,15 @@ const styles = StyleSheet.create({
   },
   commentsSection: {
     marginTop: 8,
+    paddingBottom: 16,
+  },
+  fixedInputContainer: {
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
   },
   sectionTitle: {
     fontSize: 18,
@@ -720,9 +896,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#f0f0f0',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   replyingToText: {
     fontSize: 14,
@@ -733,18 +910,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#dbdbdb',
+    backgroundColor: '#f5f5f5',
     borderRadius: 24,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   commentInput: {
     flex: 1,
     maxHeight: 100,
+    minHeight: 40,
     fontSize: 15,
     color: '#262626',
+    paddingTop: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
   },
   sendButton: {
     padding: 8,
@@ -905,5 +1083,81 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
     textAlign: 'center',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '80%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  deleteModalIcon: {
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#262626',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  deleteModalMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  deleteModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  deleteModalButtonSecondary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+  },
+  deleteModalButtonSecondaryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  deleteModalButtonPrimary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+  },
+  deleteModalButtonPrimaryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

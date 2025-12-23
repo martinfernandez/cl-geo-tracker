@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { eventApi } from '../services/api';
+import { BASE_URL } from '../config/environment';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import MapLocationPicker from '../components/MapLocationPicker';
@@ -293,7 +294,7 @@ export default function EditEventScreen({ navigation, route }: Props) {
 
           {imageUri ? (
             <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri.startsWith('file://') ? imageUri : `http://192.168.0.69:3000${imageUri}` }} style={styles.imagePreview} />
+              <Image source={{ uri: imageUri.startsWith('file://') ? imageUri : `${BASE_URL}${imageUri}` }} style={styles.imagePreview} />
               <View style={styles.imageActions}>
                 <TouchableOpacity
                   style={styles.changeImageButton}

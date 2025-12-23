@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,19 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  Easing,
+  Share,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle, Path, G, Rect, Defs, Pattern } from 'react-native-svg';
 import { Event, reactionApi } from '../services/api';
+import { useTheme } from '../contexts/ThemeContext';
+import { BASE_URL } from '../config/environment';
+import { colors as staticColors, radius } from '../theme/colors';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MINIMIZED_HEIGHT = 90; // Shows the header with title visible
 const COLLAPSED_HEIGHT = SCREEN_HEIGHT * 0.2;
 const EXPANDED_HEIGHT = SCREEN_HEIGHT * 0.8;
 const DRAG_THRESHOLD = 50;
@@ -32,7 +40,347 @@ interface Props {
   refreshing?: boolean;
   onFilterPress?: () => void;
   onCommentPress?: (eventId: string) => void;
+  isGroupMode?: boolean;
+  groupName?: string;
+  startMinimized?: boolean;
 }
+
+// Pulsing dot indicator for urgent events
+const UrgentPulsingDot = ({ color }: { color: string }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(0.6)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 2.5,
+            duration: 1000,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(opacityAnim, {
+            toValue: 0,
+            duration: 1000,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacityAnim, {
+            toValue: 0.6,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={urgentDotStyles.container}>
+      <Animated.View
+        style={[
+          urgentDotStyles.pulse,
+          {
+            backgroundColor: color,
+            transform: [{ scale: pulseAnim }],
+            opacity: opacityAnim,
+          },
+        ]}
+      />
+      <View style={[urgentDotStyles.dot, { backgroundColor: color }]} />
+    </View>
+  );
+};
+
+const urgentDotStyles = StyleSheet.create({
+  container: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pulse: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+});
+
+// Animated empty state illustration component
+const AnimatedEmptyIllustration = ({ isGroupMode }: { isGroupMode: boolean }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Float animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -8,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Subtle rotation for radar effect
+    Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  const rotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <View style={emptyStyles.illustrationContainer}>
+      <Animated.View
+        style={[
+          emptyStyles.illustrationWrapper,
+          {
+            transform: [
+              { scale: pulseAnim },
+              { translateY: floatAnim },
+            ],
+          },
+        ]}
+      >
+        <Svg width={120} height={120} viewBox="0 0 120 120">
+          {/* Background circle */}
+          <Circle cx="60" cy="60" r="55" fill="#F0F4FF" />
+
+          {/* Radar circles */}
+          <Circle cx="60" cy="60" r="45" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="35" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="25" fill="none" stroke="#E0E7FF" strokeWidth="1" />
+
+          {/* Center pin/marker */}
+          <G>
+            <Path
+              d="M60 30 C45 30 35 42 35 55 C35 75 60 90 60 90 C60 90 85 75 85 55 C85 42 75 30 60 30 Z"
+              fill={isGroupMode ? "#007AFF" : "#FF9500"}
+            />
+            <Circle cx="60" cy="52" r="10" fill="#fff" />
+          </G>
+        </Svg>
+      </Animated.View>
+
+      {/* Animated radar sweep */}
+      <Animated.View
+        style={[
+          emptyStyles.radarSweep,
+          {
+            transform: [{ rotate: rotation }],
+          },
+        ]}
+      >
+        <View style={emptyStyles.radarLine} />
+      </Animated.View>
+    </View>
+  );
+};
+
+const emptyStyles = StyleSheet.create({
+  illustrationContainer: {
+    width: 120,
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  illustrationWrapper: {
+    position: 'absolute',
+  },
+  radarSweep: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    alignItems: 'center',
+  },
+  radarLine: {
+    width: 2,
+    height: 55,
+    backgroundColor: 'rgba(0, 122, 255, 0.3)',
+    borderRadius: 1,
+  },
+});
+
+// Background pattern component with trackable objects (WhatsApp style)
+const PatternBackground = React.memo(() => {
+  const ICON_COLOR = '#D1D5DB';
+  const ICON_SIZE = 20;
+  const PATTERN_SIZE = 55;
+
+  // Simple icon shapes that render reliably
+  const renderIcon = (type: number, x: number, y: number, rotation: number) => {
+    const transform = `translate(${x}, ${y}) rotate(${rotation}, ${ICON_SIZE/2}, ${ICON_SIZE/2})`;
+
+    switch (type % 8) {
+      case 0: // Car
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Path d="M2 8 L4 4 L16 4 L18 8 L18 14 L2 14 Z" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="5" cy="14" r="2" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="15" cy="14" r="2" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 1: // Key
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Circle cx="14" cy="6" r="4" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M10 6 L2 14 L2 18 L6 18 L6 14 L10 10" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 2: // Bike
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Circle cx="4" cy="14" r="3" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="16" cy="14" r="3" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M4 14 L8 6 L12 6 L16 14 M8 6 L10 14 L12 6" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 3: // Paw
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Circle cx="10" cy="14" r="4" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="5" cy="8" r="2" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="15" cy="8" r="2" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="7" cy="4" r="1.5" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="13" cy="4" r="1.5" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 4: // Backpack
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Path d="M4 6 L4 18 L16 18 L16 6 L4 6" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M7 6 L7 3 L13 3 L13 6" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M7 10 L13 10 L13 14 L7 14 Z" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 5: // Phone
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Path d="M6 2 L14 2 L14 18 L6 18 Z" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" rx="1" />
+            <Circle cx="10" cy="15" r="1.5" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 6: // Location pin
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Path d="M10 2 C6 2 3 5 3 9 C3 14 10 20 10 20 C10 20 17 14 17 9 C17 5 14 2 10 2" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Circle cx="10" cy="9" r="2.5" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      case 7: // Watch
+        return (
+          <G key={`${x}-${y}`} transform={transform}>
+            <Circle cx="10" cy="10" r="6" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M10 6 L10 10 L13 12" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+            <Path d="M8 2 L12 2 M8 18 L12 18" stroke={ICON_COLOR} strokeWidth="1.2" fill="none" />
+          </G>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const rows = Math.ceil(SCREEN_HEIGHT / PATTERN_SIZE) + 2;
+  const cols = Math.ceil(SCREEN_WIDTH / PATTERN_SIZE) + 2;
+
+  // Seeded random function for consistent "random" values
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed * 9999) * 10000;
+    return x - Math.floor(x);
+  };
+
+  const icons = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const seed = row * 100 + col;
+      const offsetX = row % 2 === 0 ? 0 : PATTERN_SIZE / 2;
+      // Add random horizontal offset (-8 to +8)
+      const randomOffsetX = (seededRandom(seed) - 0.5) * 16;
+      // Add random vertical offset (-12 to +12)
+      const randomOffsetY = (seededRandom(seed + 50) - 0.5) * 24;
+      const x = col * PATTERN_SIZE + offsetX + randomOffsetX;
+      const y = row * PATTERN_SIZE + randomOffsetY;
+      // Random rotation between -35 and +35 degrees
+      const rotation = (seededRandom(seed + 100) - 0.5) * 70;
+      const iconType = (row * 7 + col * 3) % 8;
+      icons.push(renderIcon(iconType, x, y, rotation));
+    }
+  }
+
+  return (
+    <View style={patternStyles.container} pointerEvents="none">
+      <Svg
+        width={SCREEN_WIDTH}
+        height={SCREEN_HEIGHT}
+        viewBox={`0 0 ${SCREEN_WIDTH} ${SCREEN_HEIGHT}`}
+      >
+        {icons}
+      </Svg>
+    </View>
+  );
+});
+
+const patternStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+});
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   THEFT: 'Robo',
@@ -41,10 +389,63 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   FIRE: 'Incendio',
 };
 
+// Format relative time like Instagram/social feeds
+const formatRelativeTime = (dateString: string): string => {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) {
+    return 'hace un momento';
+  }
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) {
+    return diffInMinutes === 1 ? 'hace 1 min' : `hace ${diffInMinutes} min`;
+  }
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return diffInHours === 1 ? 'hace 1 hora' : `hace ${diffInHours} horas`;
+  }
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) {
+    return diffInDays === 1 ? 'hace 1 día' : `hace ${diffInDays} días`;
+  }
+
+  const diffInWeeks = Math.floor(diffInDays / 7);
+  if (diffInWeeks < 4) {
+    return diffInWeeks === 1 ? 'hace 1 semana' : `hace ${diffInWeeks} semanas`;
+  }
+
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) {
+    return diffInMonths === 1 ? 'hace 1 mes' : `hace ${diffInMonths} meses`;
+  }
+
+  const diffInYears = Math.floor(diffInDays / 365);
+  return diffInYears === 1 ? 'hace 1 año' : `hace ${diffInYears} años`;
+};
+
+// Sort events: urgent first, then by creation date (newest first)
+const sortEvents = (events: EventWithCounts[]): EventWithCounts[] => {
+  return [...events].sort((a, b) => {
+    // Urgent events first
+    const aUrgent = (a as any).isUrgent ? 1 : 0;
+    const bUrgent = (b as any).isUrgent ? 1 : 0;
+    if (bUrgent !== aUrgent) {
+      return bUrgent - aUrgent;
+    }
+    // Then by creation date (newest first)
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+};
+
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  THEFT: '#FF3B30',
-  LOST: '#FF9500',
-  ACCIDENT: '#FFCC00',
+  THEFT: staticColors.error.main,
+  LOST: staticColors.accent.main,
+  ACCIDENT: staticColors.warning.main,
   FIRE: '#FF2D55',
 };
 
@@ -56,14 +457,44 @@ export default function SlidingEventFeed({
   refreshing = false,
   onFilterPress,
   onCommentPress,
+  isGroupMode = false,
+  groupName,
+  startMinimized = false,
 }: Props) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { theme, isDark } = useTheme();
+  // State: 'minimized' | 'collapsed' | 'expanded'
+  const [feedState, setFeedState] = useState<'minimized' | 'collapsed' | 'expanded'>(
+    startMinimized ? 'minimized' : 'collapsed'
+  );
   const [localEvents, setLocalEvents] = useState<EventWithCounts[]>(events);
-  const height = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
+  const initialHeight = startMinimized ? MINIMIZED_HEIGHT : COLLAPSED_HEIGHT;
+  const height = useRef(new Animated.Value(initialHeight)).current;
+
+  // Update height when startMinimized changes
+  useEffect(() => {
+    if (startMinimized) {
+      setFeedState('minimized');
+      Animated.spring(height, {
+        toValue: MINIMIZED_HEIGHT,
+        useNativeDriver: false,
+        tension: 50,
+        friction: 8,
+      }).start();
+    }
+  }, [startMinimized]);
 
   React.useEffect(() => {
-    setLocalEvents(events);
+    setLocalEvents(sortEvents(events));
   }, [events]);
+
+  // Get current height based on state
+  const getCurrentHeight = () => {
+    switch (feedState) {
+      case 'minimized': return MINIMIZED_HEIGHT;
+      case 'collapsed': return COLLAPSED_HEIGHT;
+      case 'expanded': return EXPANDED_HEIGHT;
+    }
+  };
 
   const panResponder = useRef(
     PanResponder.create({
@@ -72,24 +503,46 @@ export default function SlidingEventFeed({
         return Math.abs(gestureState.dy) > 5;
       },
       onPanResponderMove: (_, gestureState) => {
-        const currentHeight = isExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
+        const currentHeight = getCurrentHeight();
         const newHeight = currentHeight - gestureState.dy;
-        // Limit movement between collapsed and expanded heights
-        if (newHeight >= COLLAPSED_HEIGHT && newHeight <= EXPANDED_HEIGHT) {
+        // Limit movement between minimized and expanded heights
+        if (newHeight >= MINIMIZED_HEIGHT && newHeight <= EXPANDED_HEIGHT) {
           height.setValue(newHeight);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy < -DRAG_THRESHOLD && !isExpanded) {
-          // Slide up
-          expandFeed();
-        } else if (gestureState.dy > DRAG_THRESHOLD && isExpanded) {
-          // Slide down
-          collapseFeed();
+        const currentHeight = getCurrentHeight();
+
+        if (gestureState.dy < -DRAG_THRESHOLD) {
+          // Swiping up
+          if (feedState === 'minimized') {
+            setToCollapsed();
+          } else if (feedState === 'collapsed') {
+            setToExpanded();
+          } else {
+            // Already expanded, spring back
+            Animated.spring(height, {
+              toValue: EXPANDED_HEIGHT,
+              useNativeDriver: false,
+            }).start();
+          }
+        } else if (gestureState.dy > DRAG_THRESHOLD) {
+          // Swiping down
+          if (feedState === 'expanded') {
+            setToCollapsed();
+          } else if (feedState === 'collapsed') {
+            setToMinimized();
+          } else {
+            // Already minimized, spring back
+            Animated.spring(height, {
+              toValue: MINIMIZED_HEIGHT,
+              useNativeDriver: false,
+            }).start();
+          }
         } else {
           // Return to current state
           Animated.spring(height, {
-            toValue: isExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT,
+            toValue: currentHeight,
             useNativeDriver: false,
           }).start();
         }
@@ -97,18 +550,18 @@ export default function SlidingEventFeed({
     })
   ).current;
 
-  const expandFeed = () => {
-    setIsExpanded(true);
+  const setToMinimized = () => {
+    setFeedState('minimized');
     Animated.spring(height, {
-      toValue: EXPANDED_HEIGHT,
+      toValue: MINIMIZED_HEIGHT,
       useNativeDriver: false,
       tension: 50,
       friction: 8,
     }).start();
   };
 
-  const collapseFeed = () => {
-    setIsExpanded(false);
+  const setToCollapsed = () => {
+    setFeedState('collapsed');
     Animated.spring(height, {
       toValue: COLLAPSED_HEIGHT,
       useNativeDriver: false,
@@ -117,10 +570,16 @@ export default function SlidingEventFeed({
     }).start();
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+  const setToExpanded = () => {
+    setFeedState('expanded');
+    Animated.spring(height, {
+      toValue: EXPANDED_HEIGHT,
+      useNativeDriver: false,
+      tension: 50,
+      friction: 8,
+    }).start();
   };
+
 
   const handleReactionPress = async (event: EventWithCounts) => {
     try {
@@ -143,72 +602,120 @@ export default function SlidingEventFeed({
     }
   };
 
+  const handleShareEvent = async (event: EventWithCounts) => {
+    const shareUrl = `${BASE_URL}/e/${event.id}`;
+    const eventTypeLabels: Record<string, string> = {
+      THEFT: 'Robo',
+      LOST: 'Extravío',
+      ACCIDENT: 'Accidente',
+      FIRE: 'Incendio',
+    };
+
+    const title = `🚨 ${eventTypeLabels[event.type] || 'Alerta'}: ${event.description.slice(0, 50)}${event.description.length > 50 ? '...' : ''}`;
+    // Include URL in message for Android compatibility (WhatsApp, etc.)
+    const message = `${title}\n\n${shareUrl}`;
+
+    try {
+      await Share.share({
+        message: message,
+      });
+    } catch (error) {
+      console.error('Error sharing event:', error);
+      Alert.alert('Error', 'No se pudo compartir el evento');
+    }
+  };
+
   const renderEventCard = ({ item }: { item: EventWithCounts }) => (
-    <View style={[styles.card, (item as any).isUrgent && styles.urgentCard]}>
-      {(item as any).isUrgent && (
-        <View style={styles.urgentBanner}>
-          <Ionicons name="warning" size={16} color="#fff" />
-          <Text style={styles.urgentBannerText}>ALERTA URGENTE</Text>
-        </View>
-      )}
+    <View style={[
+      styles.card,
+      { backgroundColor: theme.bg.primary, borderColor: theme.glass.border },
+      (item as any).isUrgent && { borderColor: theme.error.main, borderWidth: 2 }
+    ]}>
       <TouchableOpacity
         onPress={() => onEventPress?.(item.id)}
-        activeOpacity={0.7}
+        activeOpacity={0.85}
       >
-        <View style={styles.cardHeader}>
-          <View
-            style={[
-              styles.typeBadge,
-              { backgroundColor: EVENT_TYPE_COLORS[item.type] },
-            ]}
-          >
-            <Text style={styles.typeBadgeText}>
-              {EVENT_TYPE_LABELS[item.type]}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.statusBadge,
-              item.status === 'CLOSED' && styles.statusBadgeClosed,
-            ]}
-          >
-            <Text style={styles.statusBadgeText}>
-              {item.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description}
-        </Text>
-
-        <View style={styles.cardDetails}>
-          <Text style={styles.detailText}>
-            {item.device?.name || 'Sin dispositivo'}
-          </Text>
-          <Text style={styles.detailText}>{formatDate(item.createdAt)}</Text>
-        </View>
-
+        {/* Image at the top - full width */}
         {item.imageUrl && (
-          <Image
-            source={{ uri: `http://192.168.0.69:3000${item.imageUrl}` }}
-            style={styles.eventImage}
-          />
+          <View style={styles.imageContainer}>
+            <Image
+              source={{ uri: `${BASE_URL}${item.imageUrl}` }}
+              style={styles.eventImage}
+            />
+            {/* Gradient overlay for better text readability */}
+            <View style={styles.imageOverlay} />
+            {/* Time badge on image */}
+            <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
+              <Ionicons name="time-outline" size={12} color="#fff" />
+              <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
+            </View>
+          </View>
         )}
+
+        {/* Card content */}
+        <View style={styles.cardContent}>
+          {/* Header row: badges left, time right (if no image) */}
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderLeft}>
+              <View
+                style={[
+                  styles.typeBadge,
+                  { backgroundColor: EVENT_TYPE_COLORS[item.type] },
+                ]}
+              >
+                <Text style={styles.typeBadgeText}>
+                  {EVENT_TYPE_LABELS[item.type]}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: theme.primary.main },
+                  item.status === 'CLOSED' && { backgroundColor: theme.success.main },
+                ]}
+              >
+                <Text style={styles.statusBadgeText}>
+                  {item.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
+                </Text>
+              </View>
+              {(item as any).isUrgent && <UrgentPulsingDot color={theme.error.main} />}
+            </View>
+            {/* Time on the right if no image */}
+            {!item.imageUrl && (
+              <View style={styles.timeContainer}>
+                <Ionicons name="time-outline" size={12} color={theme.text.tertiary} />
+                <Text style={[styles.timeText, { color: theme.text.tertiary }]}>{formatRelativeTime(item.createdAt)}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Description */}
+          <Text style={[styles.description, { color: theme.text.primary }]} numberOfLines={2}>
+            {item.description}
+          </Text>
+
+          {/* Device info */}
+          <View style={styles.deviceRow}>
+            <Ionicons name="phone-portrait-outline" size={14} color={theme.text.tertiary} />
+            <Text style={[styles.deviceText, { color: theme.text.tertiary }]}>
+              {item.device?.name || 'Sin dispositivo'}
+            </Text>
+          </View>
+        </View>
       </TouchableOpacity>
 
       {/* Interaction buttons */}
-      <View style={styles.interactionBar}>
+      <View style={[styles.interactionBar, { borderTopColor: theme.glass.border }]}>
         <TouchableOpacity
           style={styles.interactionButton}
           onPress={() => handleReactionPress(item)}
         >
           <Ionicons
             name={item.userReacted ? 'heart' : 'heart-outline'}
-            size={24}
-            color={item.userReacted ? '#ed4956' : '#262626'}
+            size={22}
+            color={item.userReacted ? theme.error.main : theme.text.tertiary}
           />
-          <Text style={styles.interactionCount}>
+          <Text style={[styles.interactionCount, { color: theme.text.tertiary }, item.userReacted && { color: theme.error.main }]}>
             {(item.reactionCount || 0).toString()}
           </Text>
         </TouchableOpacity>
@@ -219,12 +726,19 @@ export default function SlidingEventFeed({
         >
           <Ionicons
             name="chatbubble-outline"
-            size={24}
-            color="#262626"
+            size={22}
+            color={theme.text.tertiary}
           />
-          <Text style={styles.interactionCount}>
+          <Text style={[styles.interactionCount, { color: theme.text.tertiary }]}>
             {(item.commentCount || 0).toString()}
           </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.interactionButton}
+          onPress={() => handleShareEvent(item)}
+        >
+          <Ionicons name="paper-plane-outline" size={22} color={theme.text.tertiary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -236,18 +750,33 @@ export default function SlidingEventFeed({
         styles.container,
         {
           height: height,
+          zIndex: feedState === 'minimized' ? 50 : 100,
+          backgroundColor: theme.bg.primary,
         },
       ]}
     >
-      <View {...panResponder.panHandlers} style={styles.header}>
-        <View style={styles.dragIndicator} />
+      {/* Background pattern */}
+      <PatternBackground />
+
+      <View {...panResponder.panHandlers} style={[styles.header, { backgroundColor: theme.bg.primary }]}>
+        <View style={[styles.dragIndicator, { backgroundColor: theme.glass.borderStrong }]} />
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>
-            Eventos ({events.length})
-          </Text>
-          {onFilterPress && (
-            <TouchableOpacity onPress={onFilterPress} style={styles.filterButton}>
-              <Text style={styles.filterButtonText}>⚙️ Filtros</Text>
+          <View style={styles.headerTitleContainer}>
+            {isGroupMode && (
+              <View style={[styles.groupIndicator, { backgroundColor: theme.primary.subtle }]}>
+                <Ionicons name="people" size={14} color={theme.primary.main} />
+              </View>
+            )}
+            <Text style={[styles.headerTitle, { color: theme.text.primary }]}>
+              {isGroupMode
+                ? `Eventos del grupo${groupName ? ` · ${groupName}` : ''}`
+                : `Eventos en el area (${events.length})`
+              }
+            </Text>
+          </View>
+          {onFilterPress && !isGroupMode && (
+            <TouchableOpacity onPress={onFilterPress} style={[styles.filterButton, { backgroundColor: theme.glass.bg }]}>
+              <Ionicons name="options-outline" size={18} color={theme.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -260,12 +789,27 @@ export default function SlidingEventFeed({
         contentContainerStyle={styles.listContent}
         onRefresh={onRefresh}
         refreshing={refreshing}
-        scrollEnabled={isExpanded}
-        showsVerticalScrollIndicator={isExpanded}
-        style={{ flex: 1 }}
+        scrollEnabled={feedState === 'expanded'}
+        showsVerticalScrollIndicator={feedState === 'expanded'}
+        style={{ flex: 1, display: feedState === 'minimized' ? 'none' : 'flex' }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No hay eventos en esta área</Text>
+            <AnimatedEmptyIllustration isGroupMode={isGroupMode} />
+            <Text style={[styles.emptyTitle, { color: theme.text.primary }]}>
+              {isGroupMode ? 'Sin eventos en el grupo' : 'Todo tranquilo por aqui'}
+            </Text>
+            <Text style={[styles.emptyText, { color: theme.text.secondary }]}>
+              {isGroupMode
+                ? 'Se el primero en reportar algo importante para tu grupo'
+                : 'No hay eventos reportados en esta zona. Ayuda a tu comunidad reportando incidentes.'
+              }
+            </Text>
+            <View style={[styles.emptyHint, { backgroundColor: theme.primary.subtle }]}>
+              <Ionicons name="add-circle-outline" size={16} color={theme.primary.main} />
+              <Text style={[styles.emptyHintText, { color: theme.primary.main }]}>
+                Toca + en Eventos para crear uno
+              </Text>
+            </View>
           </View>
         }
       />
@@ -279,156 +823,223 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: radius['2xl'],
+    borderTopRightRadius: radius['2xl'],
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     elevation: 8,
+    overflow: 'hidden',
   },
   header: {
-    paddingTop: 8,
-    paddingBottom: 12,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    paddingTop: 6,
+    paddingBottom: 8,
+    borderTopLeftRadius: radius['2xl'],
+    borderTopRightRadius: radius['2xl'],
+    zIndex: 1,
   },
   dragIndicator: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: '#ccc',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  groupIndicator: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    letterSpacing: -0.2,
   },
   filterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f0f0f0',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: '#666',
+    padding: 10,
+    borderRadius: radius.md,
   },
   listContent: {
-    padding: 16,
+    padding: 12,
+    paddingTop: 8,
     paddingBottom: 32,
   },
   card: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: radius.xl,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  imageContainer: {
+    position: 'relative',
+    width: '100%',
+  },
+  eventImage: {
+    width: '100%',
+    height: 180,
+    backgroundColor: '#f0f0f0',
+  },
+  imageOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    backgroundColor: 'transparent',
+    // Gradient effect using multiple layers would be better with LinearGradient
+  },
+  timeBadgeOnImage: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  timeBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  cardContent: {
+    padding: 14,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
   typeBadgeText: {
     color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: '#FF9500',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.full,
   },
   statusBadgeClosed: {
-    backgroundColor: '#34C759',
+    // Colors applied dynamically
   },
   statusBadgeText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
   },
-  description: {
-    fontSize: 14,
-    marginBottom: 8,
-    color: '#333',
-  },
-  cardDetails: {
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
   },
-  detailText: {
-    fontSize: 11,
-    color: '#666',
+  timeText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  eventImage: {
-    width: '100%',
-    height: 120,
-    borderRadius: 6,
-    marginTop: 8,
+  description: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 10,
+    fontWeight: '400',
+  },
+  deviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deviceText: {
+    fontSize: 13,
   },
   emptyState: {
-    paddingVertical: 32,
+    paddingVertical: 24,
+    paddingHorizontal: 32,
     alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,
-    color: '#999',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  emptyHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+  },
+  emptyHintText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   interactionBar: {
     flexDirection: 'row',
-    marginTop: 12,
-    paddingTop: 12,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    gap: 20,
   },
   interactionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
   interactionCount: {
     fontSize: 14,
-    color: '#262626',
     fontWeight: '600',
-    marginLeft: 4,
+  },
+  interactionCountActive: {
+    // Colors applied dynamically
   },
   urgentCard: {
-    borderWidth: 2,
-    borderColor: '#FF3B30',
-    backgroundColor: '#FFF5F5',
-  },
-  urgentBanner: {
-    backgroundColor: '#FF3B30',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    gap: 6,
-    marginBottom: 8,
-    borderRadius: 4,
-  },
-  urgentBannerText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
+    // Styles applied dynamically
   },
 });
