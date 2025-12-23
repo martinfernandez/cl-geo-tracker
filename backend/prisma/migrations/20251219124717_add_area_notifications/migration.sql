@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "AreaMembership" ADD COLUMN     "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN     "newEventsCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "notificationsEnabled" BOOLEAN NOT NULL DEFAULT true;
