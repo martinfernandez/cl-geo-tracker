@@ -1,4 +1,29 @@
-import { GPSData } from '../types';
+import { GPSData, DeviceStatusData } from '../types';
+
+// GT06 protocol battery level mapping (from raw value to percentage)
+const BATTERY_LEVEL_MAP: { [key: number]: number } = {
+  0: 0,    // No power (shutdown)
+  1: 5,    // Extremely low
+  2: 15,   // Very low
+  3: 35,   // Low
+  4: 65,   // Medium
+  5: 90,   // High
+  6: 100,  // Full
+};
+
+// GSM signal mapping (from raw value to percentage)
+const GSM_SIGNAL_MAP: { [key: number]: number } = {
+  0: 0,
+  1: 25,
+  2: 50,
+  3: 75,
+  4: 100,
+};
+
+export interface ParseResult {
+  type: 'location' | 'status';
+  data: GPSData | DeviceStatusData;
+}
 
 export class GPS103Parser {
   /**
@@ -39,6 +64,87 @@ export class GPS103Parser {
       console.error('Error parsing GPS103 data:', error);
       return null;
     }
+  }
+
+  /**
+   * Parse status packet (0x13 or 0x23) - returns battery and GSM signal info
+   * GT06 Status packet structure:
+   * [0-1]: Start bits 7878
+   * [2]: Length
+   * [3]: Protocol number (0x13 or 0x23)
+   * [4]: Terminal information (includes battery level in lower bits)
+   * [5]: Voltage level
+   * [6]: GSM signal strength
+   * [7-8]: Reserved
+   * [9-10]: Serial number
+   * [11-12]: CRC
+   * [13-14]: Stop bits 0d0a
+   */
+  static parseStatusPacket(data: Buffer, imei: string): DeviceStatusData | null {
+    try {
+      const protocolNumber = data[3];
+      if (data.length < 10 || (protocolNumber !== 0x13 && protocolNumber !== 0x23)) {
+        return null;
+      }
+
+      // Terminal info byte - lower 4 bits contain battery level (0-6)
+      const terminalInfo = data[4];
+      const batteryRaw = terminalInfo & 0x07; // Lower 3 bits for battery
+      const isCharging = (terminalInfo & 0x08) !== 0; // Bit 3 for charging status
+
+      // GSM signal strength - lower 4 bits (0-4)
+      const gsmRaw = data[6] & 0x0f;
+
+      const batteryLevel = BATTERY_LEVEL_MAP[batteryRaw] ?? 0;
+      const gsmSignal = GSM_SIGNAL_MAP[gsmRaw] ?? 0;
+
+      console.log(`Parsed GPS103 status (0x${protocolNumber.toString(16)}):`, {
+        imei,
+        batteryRaw,
+        batteryLevel,
+        isCharging,
+        gsmRaw,
+        gsmSignal,
+      });
+
+      return {
+        imei,
+        batteryLevel,
+        isCharging,
+        gsmSignal,
+      };
+    } catch (error) {
+      console.error('Error parsing GPS103 status:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if packet is a status packet (0x13) or heartbeat packet (0x23)
+   * Both can contain battery information
+   */
+  static isStatusPacket(data: Buffer): boolean {
+    if (data.length < 5 || data[0] !== 0x78 || data[1] !== 0x78) {
+      return false;
+    }
+    const protocolNumber = data[3];
+    // 0x13 = Status/Heartbeat, 0x23 = Heartbeat (alternative)
+    return protocolNumber === 0x13 || protocolNumber === 0x23;
+  }
+
+  /**
+   * Generate response for status packet (0x13 or 0x23)
+   */
+  static generateStatusResponse(serialNumber: number, protocolNumber: number = 0x13): Buffer {
+    const response = Buffer.alloc(10);
+    response[0] = 0x78;
+    response[1] = 0x78;
+    response[2] = 0x05; // Length
+    response[3] = protocolNumber; // Echo back the same protocol number
+    response.writeUInt16BE(serialNumber, 4);
+    response[6] = 0x0d;
+    response[7] = 0x0a;
+    return response;
   }
 
   private static parseLocationData(data: Buffer, imei: string): GPSData | null {
