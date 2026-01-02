@@ -1,12 +1,13 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
+import { notifyUsersAboutNewEvent } from '../../services/areaEventNotificationService';
 
 export class EventController {
   static async createEvent(req: AuthRequest, res: Response) {
     try {
       const userId = req.userId!;
-      const { deviceId, type, description, latitude, longitude, imageUrl, isUrgent, realTimeTracking } =
+      const { deviceId, phoneDeviceId, type, description, latitude, longitude, imageUrl, isUrgent, realTimeTracking, groupId, isPublic } =
         req.body;
 
       if (!type || !description || !latitude || !longitude) {
@@ -35,10 +36,54 @@ export class EventController {
         }
       }
 
+      // If phoneDeviceId is provided, validate it belongs to the user
+      if (phoneDeviceId) {
+        const phoneDevice = await prisma.phoneDevice.findUnique({
+          where: { id: phoneDeviceId },
+        });
+
+        if (!phoneDevice) {
+          return res.status(404).json({ error: 'Phone device not found' });
+        }
+
+        if (phoneDevice.userId !== userId) {
+          return res.status(403).json({ error: 'Phone device belongs to another user' });
+        }
+      }
+
+      // If groupId is provided, validate user is ADMIN of the group
+      if (groupId) {
+        const membership = await prisma.groupMembership.findUnique({
+          where: {
+            groupId_userId: {
+              groupId,
+              userId,
+            },
+          },
+        });
+
+        if (!membership) {
+          return res.status(403).json({ error: 'No eres miembro de este grupo' });
+        }
+
+        // Solo ADMIN puede crear eventos de grupo
+        if (membership.role !== 'ADMIN') {
+          return res.status(403).json({ error: 'Solo los administradores pueden crear eventos de grupo' });
+        }
+      }
+
+      // Para eventos de grupo: isPublic es false por defecto
+      // Para eventos sin grupo: isPublic es true por defecto
+      const eventIsPublic = groupId
+        ? (isPublic ?? false)  // Con grupo: privado por defecto
+        : (isPublic ?? true);  // Sin grupo: público por defecto
+
       const event = await prisma.event.create({
         data: {
           deviceId: deviceId || null,
+          phoneDeviceId: phoneDeviceId || null,
           userId,
+          groupId: groupId || null,
           type,
           description,
           latitude,
@@ -46,6 +91,7 @@ export class EventController {
           imageUrl,
           isUrgent: isUrgent || false,
           realTimeTracking: realTimeTracking || false,
+          isPublic: eventIsPublic,
         },
         include: {
           device: true,
@@ -56,13 +102,26 @@ export class EventController {
               email: true,
             },
           },
+          group: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       });
 
+      // Notify users who have areas of interest containing this event
+      notifyUsersAboutNewEvent(event).catch((err) => {
+        console.error('Error notifying about new event:', err);
+      });
+
       res.json(event);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating event:', error);
-      res.status(500).json({ error: 'Failed to create event' });
+      console.error('Error details:', error.message);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({ error: 'Failed to create event', details: error.message });
     }
   }
 
@@ -70,8 +129,22 @@ export class EventController {
     try {
       const userId = req.userId!;
 
-      const events = await prisma.event.findMany({
+      // Get groups where user is a member
+      const userGroups = await prisma.groupMembership.findMany({
         where: { userId },
+        select: { groupId: true },
+      });
+      const groupIds = userGroups.map((g) => g.groupId);
+
+      const events = await prisma.event.findMany({
+        where: {
+          OR: [
+            // User's own events
+            { userId },
+            // Events from groups user belongs to
+            { groupId: { in: groupIds } },
+          ],
+        },
         include: {
           device: true,
           user: {
@@ -79,6 +152,12 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+            },
+          },
+          group: {
+            select: {
+              id: true,
+              name: true,
             },
           },
         },
@@ -299,6 +378,11 @@ export class EventController {
       res.json(eventsWithReactionStatus);
     } catch (error) {
       console.error('Error fetching public events by region:', error);
+      // Log more details for debugging
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       res.status(500).json({ error: 'Failed to fetch public events' });
     }
   }
@@ -366,12 +450,12 @@ export class EventController {
   static async getEventPositions(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const userId = req.userId;
 
       // First get the event to check if it exists and get its creation date
       const event = await prisma.event.findFirst({
         where: {
           id,
-          isPublic: true,
           realTimeTracking: true,
         },
       });
@@ -380,75 +464,105 @@ export class EventController {
         return res.status(404).json({ error: 'Event not found or not tracked' });
       }
 
-      if (!event.deviceId) {
+      // Check access permissions
+      let hasAccess = event.isPublic; // Public events are accessible to all
+
+      // Event owner always has access
+      if (userId && event.userId === userId) {
+        hasAccess = true;
+      }
+
+      // Group members have access to group events
+      if (!hasAccess && userId && event.groupId) {
+        const membership = await prisma.groupMembership.findUnique({
+          where: {
+            groupId_userId: {
+              groupId: event.groupId,
+              userId,
+            },
+          },
+        });
+        if (membership) {
+          hasAccess = true;
+        }
+      }
+
+      if (!hasAccess) {
+        return res.status(404).json({ error: 'Event not found or not tracked' });
+      }
+
+      // Check if event has no tracking device at all
+      if (!event.deviceId && !event.phoneDeviceId) {
         return res.json({
           eventId: event.id,
           deviceId: null,
+          phoneDeviceId: null,
           positions: [],
         });
       }
 
       // Get positions from the device ONLY from when the event was created onwards
       // If event is closed, get positions up to when it was closed
-      // NOTE: Using createdAt instead of timestamp because timestamp may have incorrect dates
       const endTime = event.status === 'CLOSED' ? event.updatedAt : new Date();
 
-      const allPositions = await prisma.position.findMany({
-        where: {
-          deviceId: event.deviceId,
-          createdAt: {
-            gte: event.createdAt,
-            lte: endTime,
+      let positions: any[] = [];
+
+      // Fetch from GPS Device if deviceId is set
+      if (event.deviceId) {
+        const allPositions = await prisma.position.findMany({
+          where: {
+            deviceId: event.deviceId,
+            createdAt: {
+              gte: event.createdAt,
+              lte: endTime,
+            },
           },
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-      });
-
-      // Filter out invalid coordinates (e.g., wrong hemisphere)
-      // For Argentina, longitude should be negative (West)
-      const positions = allPositions.filter(pos => {
-        const isValid = pos.longitude < 0; // Must be in Western Hemisphere
-        if (!isValid) {
-          console.warn(`Filtering out invalid position: lat=${pos.latitude}, lon=${pos.longitude} (should be negative for Argentina)`);
-        }
-        return isValid;
-      });
-
-      console.log(`Event ${id}: Found ${positions.length} positions for tracking`);
-      console.log(`Event created at: ${event.createdAt}, Status: ${event.status}`);
-      if (event.status === 'CLOSED') {
-        console.log(`Event closed at: ${event.updatedAt}`);
-      }
-      if (positions.length > 0) {
-        console.log(`First position createdAt: ${positions[0].createdAt}, Last position createdAt: ${positions[positions.length - 1].createdAt}`);
-        console.log(`First position timestamp: ${positions[0].timestamp}, Last position timestamp: ${positions[positions.length - 1].timestamp}`);
-
-        // Write coordinates to a file for easy viewing
-        const fs = require('fs');
-        const coordsData = positions.map((pos, index) => ({
-          index: index + 1,
-          latitude: pos.latitude,
-          longitude: pos.longitude,
-          createdAt: pos.createdAt
-        }));
-        fs.writeFileSync(`/tmp/event-${id}-coordinates.json`, JSON.stringify(coordsData, null, 2));
-        console.log(`\nCoordinates written to /tmp/event-${id}-coordinates.json`);
-        console.log('First 5 coordinates:');
-        coordsData.slice(0, 5).forEach(coord => {
-          console.log(`  ${coord.index}. [${coord.latitude}, ${coord.longitude}]`);
+          orderBy: {
+            createdAt: 'asc',
+          },
         });
-        if (coordsData.length > 5) {
-          console.log(`  ... and ${coordsData.length - 5} more`);
-        }
-        console.log();
+
+        // Filter out invalid coordinates (e.g., wrong hemisphere for Argentina)
+        positions = allPositions.filter(pos => {
+          const isValid = pos.longitude < 0;
+          if (!isValid) {
+            console.warn(`Filtering out invalid position: lat=${pos.latitude}, lon=${pos.longitude}`);
+          }
+          return isValid;
+        });
       }
+      // Fetch from Phone Device if phoneDeviceId is set
+      else if (event.phoneDeviceId) {
+        const phonePositions = await prisma.phonePosition.findMany({
+          where: {
+            phoneDeviceId: event.phoneDeviceId,
+            createdAt: {
+              gte: event.createdAt,
+              lte: endTime,
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        });
+
+        // Filter out invalid coordinates
+        positions = phonePositions.filter(pos => {
+          const isValid = pos.longitude < 0;
+          if (!isValid) {
+            console.warn(`Filtering out invalid phone position: lat=${pos.latitude}, lon=${pos.longitude}`);
+          }
+          return isValid;
+        });
+      }
+
+      console.log(`Event ${id}: Found ${positions.length} positions for tracking (${event.deviceId ? 'GPS Device' : 'Phone Device'})`);
 
       // Return the positions
       res.json({
         eventId: event.id,
-        deviceId: event.deviceId,
+        deviceId: event.deviceId || null,
+        phoneDeviceId: event.phoneDeviceId || null,
         positions,
       });
     } catch (error) {
