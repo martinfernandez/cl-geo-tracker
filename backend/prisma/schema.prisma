@@ -73,6 +73,11 @@ model Device {
   qrCode    String     @unique @default(uuid())  // Código único para QR
   qrEnabled Boolean    @default(true)  // Si el QR está activo
 
+  // Battery info (for JX10 GPS devices)
+  batteryLevel     Int?       // 0-100 percentage
+  batteryUpdatedAt DateTime?  // Last time battery was reported
+  lastPositionAt   DateTime?  // Last time a position was received
+
   // Geofence lock settings
   isLocked      Boolean  @default(false)
   lockLatitude  Float?
@@ -113,6 +118,8 @@ model Event {
   id               String         @id @default(uuid())
   deviceId         String?
   device           Device?        @relation(fields: [deviceId], references: [id])
+  phoneDeviceId    String?
+  phoneDevice      PhoneDevice?   @relation(fields: [phoneDeviceId], references: [id])
   userId           String
   user             User           @relation(fields: [userId], references: [id])
   groupId          String?
@@ -133,6 +140,7 @@ model Event {
   conversations    Conversation[]
 
   @@index([deviceId])
+  @@index([phoneDeviceId])
   @@index([userId])
   @@index([groupId])
   @@index([createdAt])
@@ -445,6 +453,7 @@ model PhoneDevice {
   isActive       Boolean         @default(false)
   lastPositionAt DateTime?
   positions      PhonePosition[]
+  events         Event[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
