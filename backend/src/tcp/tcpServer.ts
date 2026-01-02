@@ -259,6 +259,12 @@ export function startTcpServer() {
               speed: position.speed,
             });
 
+            // Update device lastPositionAt
+            await prisma.device.update({
+              where: { id: device.id },
+              data: { lastPositionAt: validatedTimestamp },
+            });
+
             // Broadcast to WebSocket clients
             broadcastPositionUpdate({
               device,
