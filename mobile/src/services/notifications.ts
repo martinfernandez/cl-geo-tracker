@@ -335,6 +335,51 @@ export async function showCommentReplyNotification(
   );
 }
 
+// Notificación para objeto encontrado
+export async function showFoundObjectNotification(
+  message: string,
+  chatId: string
+) {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '¡Alguien encontró tu objeto!',
+      body: message,
+      data: {
+        type: 'FOUND_OBJECT',
+        chatId,
+      },
+      sound: 'default',
+      badge: 1,
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+      vibrate: [0, 250, 250, 250],
+    },
+    trigger: null,
+  });
+}
+
+// Notificación para mensaje de objeto encontrado
+export async function showFoundObjectMessageNotification(
+  senderName: string,
+  message: string,
+  chatId: string
+) {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Mensaje de ${senderName}`,
+      body: message,
+      data: {
+        type: 'FOUND_OBJECT_MESSAGE',
+        chatId,
+      },
+      sound: 'default',
+      badge: 1,
+      priority: Notifications.AndroidNotificationPriority.DEFAULT,
+      vibrate: [0, 250],
+    },
+    trigger: null,
+  });
+}
+
 // Limpiar todas las notificaciones
 export async function clearAllNotifications() {
   await Notifications.dismissAllNotificationsAsync();

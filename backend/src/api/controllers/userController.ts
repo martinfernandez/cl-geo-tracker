@@ -149,4 +149,185 @@ export class UserController {
       res.status(500).json({ error: 'Failed to update area of interest' });
     }
   }
+
+  // Get user public profile (with privacy filtering)
+  static async getPublicProfile(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          showName: true,
+          showEmail: true,
+          showPublicEvents: true,
+          createdAt: true,
+        },
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Apply privacy filtering
+      const publicProfile = {
+        id: user.id,
+        name: user.showName ? user.name : 'Usuario Anónimo',
+        email: user.showEmail ? user.email : undefined,
+        showName: user.showName,
+        showEmail: user.showEmail,
+        showPublicEvents: user.showPublicEvents,
+        createdAt: user.createdAt,
+      };
+
+      res.json(publicProfile);
+    } catch (error) {
+      console.error('Error getting public profile:', error);
+      res.status(500).json({ error: 'Failed to get public profile' });
+    }
+  }
+
+  // Get user's public events (filtered by privacy)
+  static async getUserPublicEvents(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          showPublicEvents: true,
+        },
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // If user has hidden their public events, return empty array
+      if (!user.showPublicEvents) {
+        return res.json([]);
+      }
+
+      // Get user's public events
+      const events = await prisma.event.findMany({
+        where: {
+          userId,
+          isPublic: true,
+        },
+        include: {
+          device: {
+            select: {
+              id: true,
+              name: true,
+              imei: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      res.json(events);
+    } catch (error) {
+      console.error('Error getting user public events:', error);
+      res.status(500).json({ error: 'Failed to get user public events' });
+    }
+  }
+
+  // Update own privacy settings
+  static async updatePrivacySettings(req: Request, res: Response) {
+    try {
+      const userId = (req as any).userId;
+      const { showName, showEmail, showPublicEvents } = req.body;
+
+      const data: any = {};
+      if (showName !== undefined) data.showName = showName;
+      if (showEmail !== undefined) data.showEmail = showEmail;
+      if (showPublicEvents !== undefined) data.showPublicEvents = showPublicEvents;
+
+      if (Object.keys(data).length === 0) {
+        return res.status(400).json({ error: 'No privacy settings provided' });
+      }
+
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          showName: true,
+          showEmail: true,
+          showPublicEvents: true,
+        },
+      });
+
+      res.json(user);
+    } catch (error) {
+      console.error('Error updating privacy settings:', error);
+      res.status(500).json({ error: 'Failed to update privacy settings' });
+    }
+  }
+
+  // Refresh token - generates a new token for an authenticated user
+  static async refreshToken(req: Request, res: Response) {
+    try {
+      const userId = (req as any).userId;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const token = generateToken(user.id);
+
+      res.json({
+        user,
+        token,
+      });
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      res.status(500).json({ error: 'Failed to refresh token' });
+    }
+  }
+
+  // Register/update push token
+  static async registerPushToken(req: Request, res: Response) {
+    try {
+      const userId = (req as any).userId;
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ error: 'Push token is required' });
+      }
+
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          expoPushToken: token,
+        },
+        select: {
+          id: true,
+          expoPushToken: true,
+        },
+      });
+
+      res.json({ success: true, token: user.expoPushToken });
+    } catch (error) {
+      console.error('Error registering push token:', error);
+      res.status(500).json({ error: 'Failed to register push token' });
+    }
+  }
 }

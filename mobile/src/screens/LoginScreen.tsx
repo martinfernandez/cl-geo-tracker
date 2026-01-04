@@ -5,13 +5,19 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { PeekLogo } from '../components/PeekLogo';
+import { useTheme } from '../contexts/ThemeContext';
+import { radius } from '../theme/colors';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -22,10 +28,12 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { showError, showWarning } = useToast();
+  const { theme, isDark } = useTheme();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showWarning('Campos incompletos', 'Ingresa tu email y contrasena');
       return;
     }
 
@@ -34,118 +42,195 @@ export default function LoginScreen({ navigation }: Props) {
       await login(email, password);
     } catch (error: any) {
       console.error('Login error:', error);
-      let errorMessage = 'Error al iniciar sesión. Intenta nuevamente.';
+      let title = 'No pudimos iniciar sesion';
+      let message = 'Intenta nuevamente';
 
       if (error.response) {
-        // Error del servidor
         if (error.response.status === 401) {
-          errorMessage = 'Email o contraseña incorrectos';
+          title = 'Credenciales incorrectas';
+          message = 'Revisa tu email y contrasena';
         } else {
-          errorMessage = error.response.data?.error || `Error del servidor: ${error.response.status}`;
+          message = error.response.data?.error || `Error del servidor`;
         }
       } else if (error.request) {
-        // No hubo respuesta del servidor
-        errorMessage = 'No se pudo conectar al servidor. Verifica tu conexión.';
-      } else {
-        // Error al configurar la petición
-        errorMessage = error.message || 'Error desconocido';
+        title = 'Sin conexion';
+        message = 'Verifica tu conexion a internet';
       }
 
-      Alert.alert('Error de Inicio de Sesión', errorMessage);
+      showError(title, message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        <Text style={styles.title}>GPS Tracker</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
+    <View style={[styles.container, { backgroundColor: theme.bg.primary }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          editable={!loading}
+      {/* Background gradient */}
+      <LinearGradient
+        colors={[theme.bg.primary, theme.bg.secondary, theme.bg.primary]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Decorative gradient orbs */}
+      <View style={styles.orbContainer}>
+        <LinearGradient
+          colors={[theme.primary.glow, 'transparent']}
+          style={[styles.orb, styles.orbPurple]}
+          start={{ x: 0.5, y: 0.5 }}
+          end={{ x: 1, y: 1 }}
         />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          editable={!loading}
+        <LinearGradient
+          colors={[theme.secondary.glow, 'transparent']}
+          style={[styles.orb, styles.orbCyan]}
+          start={{ x: 0.5, y: 0.5 }}
+          end={{ x: 1, y: 1 }}
         />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Register')}
-          disabled={loading}
-        >
-          <Text style={styles.link}>
-            Don't have an account? <Text style={styles.linkBold}>Sign Up</Text>
-          </Text>
-        </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
+        <View style={styles.content}>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <PeekLogo size="large" showBubble={false} variant={isDark ? 'white' : 'dark'} />
+          </View>
+          <Text style={[styles.subtitle, { color: theme.text.secondary }]}>Tu comunidad, conectada</Text>
+
+          {/* Glass card for inputs */}
+          <View style={[styles.glassCard, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border }]}>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                placeholder="Email"
+                placeholderTextColor={theme.text.tertiary}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                editable={!loading}
+              />
+
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                placeholder="Contrasena"
+                placeholderTextColor={theme.text.tertiary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                editable={!loading}
+              />
+            </View>
+
+            {/* Login button with gradient */}
+            <TouchableOpacity
+              style={[styles.buttonContainer, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[theme.primary.main, theme.primary.dark]}
+                style={styles.button}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Iniciar sesion</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          {/* Register link */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Register')}
+            disabled={loading}
+            style={styles.linkContainer}
+          >
+            <Text style={[styles.link, { color: theme.text.tertiary }]}>
+              No tienes cuenta? <Text style={[styles.linkBold, { color: theme.primary.light }]}>Registrate</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  orbContainer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  orb: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+  },
+  orbPurple: {
+    top: -100,
+    right: -100,
+    opacity: 0.6,
+  },
+  orbCyan: {
+    bottom: -50,
+    left: -100,
+    opacity: 0.4,
+  },
+  keyboardView: {
+    flex: 1,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
+    padding: 24,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
-    marginBottom: 40,
+    marginBottom: 48,
     textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  glassCard: {
+    borderWidth: 1,
+    borderRadius: radius['2xl'],
+    padding: 24,
+    marginBottom: 24,
+  },
+  inputContainer: {
+    gap: 16,
+    marginBottom: 24,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: radius.lg,
+    padding: 16,
     fontSize: 16,
   },
+  buttonContainer: {
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+  },
   button: {
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
     padding: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -154,14 +239,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  linkContainer: {
+    paddingVertical: 12,
   },
   link: {
     textAlign: 'center',
-    color: '#666',
-    fontSize: 14,
+    fontSize: 15,
   },
   linkBold: {
-    color: '#007AFF',
     fontWeight: '600',
   },
 });

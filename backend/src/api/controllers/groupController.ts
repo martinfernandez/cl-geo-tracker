@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
+import { requestLocationFromUsers } from '../../websocket/wsServer';
 
 export class GroupController {
   // Create a new group
@@ -640,6 +641,13 @@ export class GroupController {
       });
 
       console.log('[getPositions] Members with location sharing:', membersWithLocationSharing.map(m => ({ userId: m.userId, name: m.user.name })));
+
+      // Request fresh location from all group members (on-demand update)
+      // This sends WebSocket message to connected clients asking them to submit their current location
+      const memberIds = membersWithLocationSharing.map(m => m.userId);
+      if (memberIds.length > 0) {
+        requestLocationFromUsers(memberIds, userId);
+      }
 
       const positions: any[] = [];
 

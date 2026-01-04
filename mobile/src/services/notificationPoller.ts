@@ -4,6 +4,8 @@ import {
   showCommentReplyNotification,
   showReactionNotification,
   showAreaJoinRequestNotification,
+  showFoundObjectNotification,
+  showFoundObjectMessageNotification,
 } from './notifications';
 
 let pollingInterval: NodeJS.Timeout | null = null;
@@ -53,8 +55,15 @@ export const startNotificationPolling = async () => {
         const idsArray = Array.from(shownNotificationIds);
         shownNotificationIds = new Set(idsArray.slice(-100));
       }
-    } catch (error) {
-      console.error('Error polling notifications:', error);
+    } catch (error: any) {
+      // If 401, stop polling silently (user logged out or token expired)
+      if (error?.response?.status === 401) {
+        console.log('Auth expired, stopping notification polling');
+        stopNotificationPolling();
+        return;
+      }
+      // Only log non-auth errors
+      console.error('Error polling notifications:', error?.message || error);
     }
   }, 10000); // Poll every 10 seconds
 };
@@ -100,6 +109,21 @@ const showNativeNotification = async (notif: any) => {
     case 'COMMENT_REPLY':
       const commenterName = notif.sender?.name || 'Alguien';
       await showCommentReplyNotification(commenterName, notif.content, notif.eventId || '');
+      break;
+
+    case 'FOUND_OBJECT':
+      await showFoundObjectNotification(
+        notif.content || '¡Alguien encontró tu objeto!',
+        notif.chatId || ''
+      );
+      break;
+
+    case 'FOUND_OBJECT_MESSAGE':
+      await showFoundObjectMessageNotification(
+        notif.sender?.name || 'Alguien',
+        notif.content || 'Nuevo mensaje',
+        notif.chatId || ''
+      );
       break;
 
     default:

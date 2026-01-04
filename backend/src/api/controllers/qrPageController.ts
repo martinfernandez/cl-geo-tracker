@@ -26,7 +26,9 @@ export class QRPageController {
         return res.send(generateDisabledPage());
       }
 
-      const baseUrl = process.env.BASE_URL || `http://${req.headers.host}`;
+      // Detect protocol from x-forwarded-proto header (set by Railway/proxies) or default to https in production
+      const protocol = req.headers['x-forwarded-proto'] || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+      const baseUrl = process.env.BASE_URL || `${protocol}://${req.headers.host}`;
       const appScheme = 'peek://';
       const deepLink = `${appScheme}qr/${qrCode}`;
       const apiBaseUrl = `${baseUrl}/api/qr`;

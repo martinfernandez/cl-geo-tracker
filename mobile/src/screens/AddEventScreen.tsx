@@ -1,66 +1,109 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   Image,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { eventApi, deviceApi } from '../services/api';
+import MapView, { Marker } from 'react-native-maps';
+import { eventApi, deviceApi, groupApi, phoneLocationApi } from '../services/api';
+import { startBackgroundTracking } from '../services/backgroundLocation';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import MapLocationPicker from '../components/MapLocationPicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const EVENT_TYPES = [
-  { label: 'Robo', value: 'THEFT', icon: 'warning', color: '#FF3B30' },
-  { label: 'Extravío', value: 'LOST', icon: 'help-circle', color: '#FF9500' },
-  { label: 'Accidente', value: 'ACCIDENT', icon: 'car', color: '#FFCC00' },
-  { label: 'Incendio', value: 'FIRE', icon: 'flame', color: '#FF2D55' },
+  { value: 'GENERAL', icon: 'megaphone-outline', label: 'General', color: '#007AFF' },
+  { value: 'THEFT', icon: 'warning-outline', label: 'Robo', color: '#FF3B30' },
+  { value: 'LOST', icon: 'search-outline', label: 'Extravio', color: '#FF9500' },
+  { value: 'ACCIDENT', icon: 'car-outline', label: 'Accidente', color: '#FF6B00' },
+  { value: 'FIRE', icon: 'flame-outline', label: 'Incendio', color: '#FF2D55' },
 ];
 
-const STEPS = {
-  TYPE: 0,
-  DESCRIPTION: 1,
-  LOCATION: 2,
-  DEVICE: 3,
-  IMAGE: 4,
-  REVIEW: 5,
-};
-
 export default function AddEventScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { showSuccess, showError } = useToast();
-  const [currentStep, setCurrentStep] = useState(STEPS.TYPE);
-  const [devices, setDevices] = useState<any[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState('');
-  const [eventType, setEventType] = useState('');
+  const { isDark } = useTheme();
+
+  // Step state: 0 = details, 1 = location (type selection is inline now)
+  const [currentStep, setCurrentStep] = useState(0);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Form state - GENERAL preselected
+  const [eventType, setEventType] = useState('GENERAL');
   const [description, setDescription] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-  const [locationMode, setLocationMode] = useState('');
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
 
+  // Optional: Device and Group
+  const [devices, setDevices] = useState<any[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState('');
+  const [phoneDevice, setPhoneDevice] = useState<any>(null);
+  const [usePhoneDevice, setUsePhoneDevice] = useState(false);
+  const [adminGroups, setAdminGroups] = useState<any[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [isPublic, setIsPublic] = useState(true);
+  const [realTimeTracking, setRealTimeTracking] = useState(false);
+  const [deviceLocation, setDeviceLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isUrgent, setIsUrgent] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Reset form
+      setCurrentStep(0);
+      setEventType('GENERAL');
+      setDescription('');
+      setImageUri(null);
+      setLocation(null);
+      setSelectedDevice('');
+      setUsePhoneDevice(false);
+      setSelectedGroup(null);
+      setIsPublic(true);
+      setRealTimeTracking(false);
+      setDeviceLocation(null);
+      setIsUrgent(false);
+      slideAnim.setValue(0);
+
+      // Load data
+      loadDevices();
+      loadAdminGroups();
+      loadPhoneDevice();
+    }, [])
+  );
+
   useEffect(() => {
-    loadDevices();
     requestPermissions();
   }, []);
+
+  // Get location when entering step 1
+  useEffect(() => {
+    if (currentStep === 1 && !location) {
+      getCurrentLocation();
+    }
+  }, [currentStep]);
 
   const requestPermissions = async () => {
     await ImagePicker.requestCameraPermissionsAsync();
@@ -72,8 +115,94 @@ export default function AddEventScreen({ navigation }: Props) {
     try {
       const data = await deviceApi.getAll();
       setDevices(data);
+
+      // If no GPS tracker devices, default to phone device
+      const gpsTrackers = data.filter((d: any) => d.type === 'GPS_TRACKER');
+      if (gpsTrackers.length === 0) {
+        setUsePhoneDevice(true);
+        setRealTimeTracking(true);
+      }
     } catch (error) {
       console.error('Error loading devices:', error);
+      // On error loading devices, also default to phone device
+      setUsePhoneDevice(true);
+      setRealTimeTracking(true);
+    }
+  };
+
+  const loadAdminGroups = async () => {
+    try {
+      const data = await groupApi.getMyAdminGroups();
+      setAdminGroups(data);
+    } catch (error) {
+      console.error('Error loading admin groups:', error);
+    }
+  };
+
+  const loadPhoneDevice = async () => {
+    try {
+      const status = await phoneLocationApi.getStatus();
+      if (status.hasDevice) {
+        // Get the phone device details
+        const device = await phoneLocationApi.getMyDevice();
+        setPhoneDevice(device);
+      } else {
+        // Create a phone device for the user
+        const device = await phoneLocationApi.createDevice('Mi Telefono');
+        setPhoneDevice(device);
+      }
+    } catch (error) {
+      console.error('Error loading phone device:', error);
+      // Try to create one if getting status fails
+      try {
+        const device = await phoneLocationApi.createDevice('Mi Telefono');
+        setPhoneDevice(device);
+      } catch (createError) {
+        console.error('Error creating phone device:', createError);
+      }
+    }
+  };
+
+  const loadDeviceLocation = async (deviceId: string) => {
+    try {
+      const device = devices.find(d => d.id === deviceId);
+      if (device?.lastPosition) {
+        setDeviceLocation({
+          latitude: device.lastPosition.latitude,
+          longitude: device.lastPosition.longitude,
+        });
+        // When real-time tracking, use device location
+        setLocation({
+          latitude: device.lastPosition.latitude,
+          longitude: device.lastPosition.longitude,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading device location:', error);
+    }
+  };
+
+  // When device changes and real-time tracking is enabled, get device location
+  useEffect(() => {
+    if (selectedDevice && realTimeTracking) {
+      loadDeviceLocation(selectedDevice);
+    }
+  }, [selectedDevice, realTimeTracking]);
+
+  const handleDeviceSelect = (deviceId: string) => {
+    setSelectedDevice(deviceId);
+    if (!deviceId) {
+      setRealTimeTracking(false);
+      setDeviceLocation(null);
+    }
+  };
+
+  const handleRealTimeToggle = (enabled: boolean) => {
+    setRealTimeTracking(enabled);
+    if (enabled && selectedDevice) {
+      loadDeviceLocation(selectedDevice);
+    } else if (!enabled) {
+      setDeviceLocation(null);
     }
   };
 
@@ -85,48 +214,34 @@ export default function AddEventScreen({ navigation }: Props) {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       });
-      setLocationMode('current');
-      setCurrentStep(STEPS.DEVICE);
     } catch (error) {
       console.error('Error getting location:', error);
-      showError('No se pudo obtener la ubicación');
     } finally {
       setLoadingLocation(false);
     }
   };
 
-  const getDeviceLocation = async () => {
-    if (!selectedDevice) {
-      showError('Selecciona un dispositivo primero');
+  const animateToStep = (step: number) => {
+    Animated.spring(slideAnim, {
+      toValue: -step * SCREEN_WIDTH,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 40,
+    }).start();
+    setCurrentStep(step);
+  };
+
+  const handleNextFromDetails = () => {
+    if (!description.trim()) {
+      showError('Describe que esta pasando');
       return;
     }
-
-    setLoadingLocation(true);
-    try {
-      const device = await deviceApi.getById(selectedDevice);
-      if (device.positions && device.positions.length > 0) {
-        const lastPosition = device.positions[0];
-        setLocation({
-          latitude: lastPosition.latitude,
-          longitude: lastPosition.longitude,
-        });
-        setLocationMode('device');
-        setCurrentStep(STEPS.DEVICE);
-      } else {
-        showError('El dispositivo no tiene ubicaciones registradas');
-      }
-    } catch (error) {
-      console.error('Error getting device location:', error);
-      showError('No se pudo obtener la ubicación del dispositivo');
-    } finally {
-      setLoadingLocation(false);
-    }
+    animateToStep(1);
   };
 
   const handleManualLocation = (loc: { latitude: number; longitude: number }) => {
     setLocation(loc);
-    setLocationMode('manual');
-    setCurrentStep(STEPS.DEVICE);
+    setShowMapPicker(false);
   };
 
   const pickImage = async () => {
@@ -156,8 +271,8 @@ export default function AddEventScreen({ navigation }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!eventType || !description || !location) {
-      showError('Por favor completa todos los campos requeridos');
+    if (!location) {
+      showError('Esperando ubicacion...');
       return;
     }
 
@@ -165,382 +280,459 @@ export default function AddEventScreen({ navigation }: Props) {
     try {
       let imageUrl;
       if (imageUri) {
-        imageUrl = await eventApi.uploadImage(imageUri);
+        console.log('[AddEvent] Uploading image...');
+        try {
+          imageUrl = await eventApi.uploadImage(imageUri);
+          console.log('[AddEvent] Image uploaded:', imageUrl);
+        } catch (uploadError: any) {
+          console.error('[AddEvent] Image upload failed:', uploadError);
+          console.error('[AddEvent] Upload error response:', uploadError.response?.data);
+          // Continue without image if upload fails
+          imageUrl = undefined;
+        }
       }
 
       const eventData: any = {
         type: eventType,
-        description,
+        description: description.trim(),
         latitude: location.latitude,
         longitude: location.longitude,
         imageUrl,
+        isUrgent,
       };
 
       if (selectedDevice) {
         eventData.deviceId = selectedDevice;
+        eventData.realTimeTracking = realTimeTracking;
+      } else if (usePhoneDevice && phoneDevice) {
+        eventData.phoneDeviceId = phoneDevice.id;
+        eventData.realTimeTracking = realTimeTracking;
       }
 
+      if (selectedGroup) {
+        eventData.groupId = selectedGroup;
+        eventData.isPublic = isPublic;
+      }
+
+      console.log('[AddEvent] Creating event with data:', JSON.stringify(eventData, null, 2));
       await eventApi.create(eventData);
 
-      // Show success toast
-      showSuccess('Evento creado exitosamente');
+      // Start background tracking if using phone device with real-time tracking
+      if (usePhoneDevice && realTimeTracking) {
+        console.log('[AddEvent] Starting background location tracking for phone event...');
+        const trackingStarted = await startBackgroundTracking();
+        if (trackingStarted) {
+          console.log('[AddEvent] Background tracking started successfully');
+          showSuccess('Evento publicado - tracking activo');
+        } else {
+          console.warn('[AddEvent] Background tracking could not start');
+          showSuccess('Evento publicado');
+        }
+      } else {
+        showSuccess('Evento publicado');
+      }
 
-      // Navigate to Events list with refresh parameter
       setTimeout(() => {
         navigation.navigate('EventsList', { refresh: true });
-      }, 500);
+      }, 300);
     } catch (error: any) {
-      console.error('Error creating event:', error);
+      console.error('[AddEvent] Error creating event:', error);
+      console.error('[AddEvent] Error response:', error.response?.data);
+      console.error('[AddEvent] Error status:', error.response?.status);
       showError(error.response?.data?.error || 'No se pudo crear el evento');
     } finally {
       setLoading(false);
     }
   };
 
-  const canContinue = () => {
-    switch (currentStep) {
-      case STEPS.TYPE:
-        return eventType !== '';
-      case STEPS.DESCRIPTION:
-        return description.trim() !== '';
-      case STEPS.LOCATION:
-        return location !== null;
-      case STEPS.DEVICE:
-        return true; // Device is optional
-      case STEPS.IMAGE:
-        return true; // Image is optional
-      default:
-        return true;
-    }
-  };
+  const selectedTypeConfig = EVENT_TYPES.find(t => t.value === eventType);
 
-  const getSelectedEventType = () => {
-    return EVENT_TYPES.find(t => t.value === eventType);
-  };
-
-  const renderStepIndicator = () => {
-    const totalSteps = 6;
-    const progress = ((currentStep + 1) / totalSteps) * 100;
-
-    return (
-      <View style={styles.stepIndicatorContainer}>
-        <View style={styles.progressBarBackground}>
-          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-        </View>
-        <Text style={styles.stepText}>
-          Paso {currentStep + 1} de {totalSteps}
-        </Text>
-      </View>
-    );
-  };
-
-  const renderStepType = () => {
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <Text style={styles.stepTitle}>¿Qué tipo de evento deseas reportar?</Text>
-          <Text style={styles.stepSubtitle}>Selecciona el tipo que mejor describe la situación</Text>
-        </View>
-
-        <View style={styles.eventTypesGrid}>
-          {EVENT_TYPES.map((type) => (
-            <TouchableOpacity
-              key={type.value}
-              style={[
-                styles.eventTypeCard,
-                eventType === type.value && styles.eventTypeCardSelected,
-                { borderColor: eventType === type.value ? type.color : '#e0e0e0' },
-              ]}
-              onPress={() => setEventType(type.value)}
-            >
-              <View style={[styles.eventTypeIcon, { backgroundColor: type.color + '20' }]}>
-                <Ionicons name={type.icon as any} size={32} color={type.color} />
-              </View>
-              <Text
+  const renderDetailsStep = () => (
+    <ScrollView
+      style={styles.stepContainer}
+      contentContainerStyle={styles.stepContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Event Type Selector */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Tipo de evento</Text>
+        <View style={styles.typeSelector}>
+          {EVENT_TYPES.map(type => {
+            const isSelected = eventType === type.value;
+            return (
+              <TouchableOpacity
+                key={type.value}
                 style={[
-                  styles.eventTypeLabel,
-                  eventType === type.value && { color: type.color },
+                  styles.typeChip,
+                  isSelected && { backgroundColor: type.color },
                 ]}
+                onPress={() => setEventType(type.value)}
+                activeOpacity={0.7}
               >
-                {type.label}
+                <Ionicons
+                  name={type.icon as any}
+                  size={18}
+                  color={isSelected ? '#fff' : type.color}
+                />
+                <Text
+                  style={[
+                    styles.typeChipText,
+                    isSelected && styles.typeChipTextSelected,
+                    !isSelected && { color: type.color },
+                  ]}
+                >
+                  {type.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Urgent Toggle */}
+        <TouchableOpacity
+          style={[styles.urgentToggle, isUrgent && styles.urgentToggleActive]}
+          onPress={() => setIsUrgent(!isUrgent)}
+        >
+          <View style={styles.urgentToggleLeft}>
+            <Ionicons
+              name={isUrgent ? "alert-circle" : "alert-circle-outline"}
+              size={20}
+              color={isUrgent ? '#FF3B30' : '#666'}
+            />
+            <View>
+              <Text style={[styles.urgentToggleText, isUrgent && styles.urgentToggleTextActive]}>
+                Marcar como urgente
               </Text>
+              <Text style={styles.urgentToggleHint}>
+                {isUrgent ? 'Se mostrara con indicador pulsante' : 'Mayor visibilidad en el feed'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.toggleSwitch, isUrgent && styles.urgentToggleSwitchActive]}>
+            <View style={[styles.toggleKnob, isUrgent && styles.toggleKnobActive]} />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Device Selection - Modern Card Design */}
+      <View style={styles.deviceSection}>
+        <Text style={styles.sectionLabel}>Seguimiento en vivo</Text>
+
+        {/* Device List */}
+        <View style={styles.deviceList}>
+          {/* No tracking option */}
+          <TouchableOpacity
+            style={styles.deviceRow}
+            onPress={async () => {
+              handleDeviceSelect('');
+              setUsePhoneDevice(false);
+              setRealTimeTracking(false);
+              // Get current location and show map picker for easy selection
+              if (!location) {
+                setLoadingLocation(true);
+                try {
+                  const loc = await Location.getCurrentPositionAsync({});
+                  setLocation({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                  });
+                } catch (error) {
+                  console.error('Error getting location:', error);
+                }
+                setLoadingLocation(false);
+              }
+              setShowMapPicker(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.deviceRowIcon, { backgroundColor: '#F0F0F0' }]}>
+              <Ionicons name="location-outline" size={22} color="#8E8E93" />
+            </View>
+            <View style={styles.deviceRowContent}>
+              <Text style={styles.deviceRowTitle}>Solo ubicacion inicial</Text>
+              <Text style={styles.deviceRowSubtitle}>Elegir ubicacion en el mapa</Text>
+            </View>
+            <View style={[styles.radioOuter, !selectedDevice && !usePhoneDevice && styles.radioOuterSelected]}>
+              {!selectedDevice && !usePhoneDevice && <View style={styles.radioInner} />}
+            </View>
+          </TouchableOpacity>
+
+          {/* Phone Device */}
+          {phoneDevice && (
+            <TouchableOpacity
+              style={styles.deviceRow}
+              onPress={() => {
+                handleDeviceSelect('');
+                setUsePhoneDevice(true);
+                setRealTimeTracking(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.deviceRowIcon, { backgroundColor: '#EDE7F6' }]}>
+                <Ionicons name="phone-portrait" size={22} color="#5856D6" />
+              </View>
+              <View style={styles.deviceRowContent}>
+                <Text style={styles.deviceRowTitle}>Este iPhone</Text>
+                <Text style={styles.deviceRowSubtitle}>Compartir ubicacion en tiempo real</Text>
+              </View>
+              <View style={[styles.radioOuter, usePhoneDevice && styles.radioOuterSelected]}>
+                {usePhoneDevice && <View style={styles.radioInner} />}
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* GPS Tracker Devices */}
+          {devices.filter(d => d.type === 'GPS_TRACKER').map(device => (
+            <TouchableOpacity
+              key={device.id}
+              style={styles.deviceRow}
+              onPress={() => {
+                handleDeviceSelect(device.id);
+                setUsePhoneDevice(false);
+                setRealTimeTracking(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.deviceRowIcon, { backgroundColor: '#E3F2FD' }]}>
+                <Ionicons name="navigate" size={22} color="#007AFF" />
+              </View>
+              <View style={styles.deviceRowContent}>
+                <Text style={styles.deviceRowTitle}>{device.name || `JX10-${device.imei?.slice(-4)}`}</Text>
+                <Text style={styles.deviceRowSubtitle}>Rastreador GPS</Text>
+              </View>
+              <View style={[styles.radioOuter, selectedDevice === device.id && styles.radioOuterSelected]}>
+                {selectedDevice === device.id && <View style={styles.radioInner} />}
+              </View>
             </TouchableOpacity>
           ))}
         </View>
-      </View>
-    );
-  };
 
-  const renderStepDescription = () => {
-    const selectedType = getSelectedEventType();
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <View style={styles.selectedTypeBadge}>
-            <Ionicons name={selectedType?.icon as any} size={20} color={selectedType?.color} />
-            <Text style={[styles.selectedTypeText, { color: selectedType?.color }]}>
-              {selectedType?.label}
+        {/* Real-time tracking info when device selected */}
+        {(selectedDevice || usePhoneDevice) && (
+          <View style={styles.trackingInfo}>
+            <Ionicons name="radio" size={16} color="#34C759" />
+            <Text style={styles.trackingInfoText}>
+              {usePhoneDevice
+                ? 'Tu ubicacion se compartira en tiempo real mientras el evento este activo'
+                : 'La ubicacion del dispositivo se actualizara automaticamente'}
             </Text>
-          </View>
-          <Text style={styles.stepTitle}>Describe lo que sucedió</Text>
-          <Text style={styles.stepSubtitle}>Proporciona detalles que puedan ser útiles</Text>
-        </View>
-
-        <TextInput
-          style={styles.descriptionInput}
-          placeholder="Ej: Se llevaron mi bicicleta del estacionamiento del edificio..."
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          numberOfLines={8}
-          textAlignVertical="top"
-          maxLength={500}
-        />
-        <Text style={styles.charCounter}>{description.length}/500</Text>
-      </View>
-    );
-  };
-
-  const renderStepLocation = () => {
-    const selectedType = getSelectedEventType();
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <View style={styles.selectedTypeBadge}>
-            <Ionicons name={selectedType?.icon as any} size={20} color={selectedType?.color} />
-            <Text style={[styles.selectedTypeText, { color: selectedType?.color }]}>
-              {selectedType?.label}
-            </Text>
-          </View>
-          <Text style={styles.stepTitle}>¿Dónde ocurrió?</Text>
-          <Text style={styles.stepSubtitle}>Selecciona la ubicación del evento</Text>
-        </View>
-
-        {location && (
-          <View style={styles.locationSelectedCard}>
-            <Ionicons name="checkmark-circle" size={24} color="#34C759" />
-            <View style={styles.locationSelectedInfo}>
-              <Text style={styles.locationSelectedTitle}>Ubicación confirmada</Text>
-              <Text style={styles.locationSelectedCoords}>
-                {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-              </Text>
-              <Text style={styles.locationSelectedMode}>
-                {locationMode === 'current' && 'Ubicación actual'}
-                {locationMode === 'device' && 'Ubicación del dispositivo'}
-                {locationMode === 'manual' && 'Selección manual en mapa'}
-              </Text>
-            </View>
           </View>
         )}
-
-        <View style={styles.locationOptionsGrid}>
-          <TouchableOpacity
-            style={styles.locationOption}
-            onPress={getCurrentLocation}
-            disabled={loadingLocation}
-          >
-            <View style={styles.locationOptionIcon}>
-              {loadingLocation && !location ? (
-                <ActivityIndicator color="#007AFF" />
-              ) : (
-                <Ionicons name="navigate" size={28} color="#007AFF" />
-              )}
-            </View>
-            <Text style={styles.locationOptionTitle}>Mi Ubicación</Text>
-            <Text style={styles.locationOptionSubtitle}>Usar GPS actual</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.locationOption}
-            onPress={() => setShowMapPicker(true)}
-          >
-            <View style={styles.locationOptionIcon}>
-              <Ionicons name="map" size={28} color="#007AFF" />
-            </View>
-            <Text style={styles.locationOptionTitle}>Seleccionar</Text>
-            <Text style={styles.locationOptionSubtitle}>En el mapa</Text>
-          </TouchableOpacity>
-        </View>
       </View>
-    );
-  };
 
-  const renderStepDevice = () => {
-    const selectedType = getSelectedEventType();
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <View style={styles.selectedTypeBadge}>
-            <Ionicons name={selectedType?.icon as any} size={20} color={selectedType?.color} />
-            <Text style={[styles.selectedTypeText, { color: selectedType?.color }]}>
-              {selectedType?.label}
-            </Text>
-          </View>
-          <Text style={styles.stepTitle}>¿Está asociado a un dispositivo?</Text>
-          <Text style={styles.stepSubtitle}>Opcional - Puedes vincular un dispositivo rastreado</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[
-            styles.deviceOption,
-            selectedDevice === '' && styles.deviceOptionSelected,
-          ]}
-          onPress={() => setSelectedDevice('')}
-        >
-          <Ionicons
-            name={selectedDevice === '' ? 'radio-button-on' : 'radio-button-off'}
-            size={24}
-            color={selectedDevice === '' ? '#007AFF' : '#999'}
+      {/* Description */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Descripcion</Text>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.descriptionInput}
+            placeholder="Que esta pasando? Describe la situacion..."
+            placeholderTextColor="#999"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            maxLength={500}
           />
-          <View style={styles.deviceOptionInfo}>
-            <Text style={styles.deviceOptionTitle}>Sin dispositivo</Text>
-            <Text style={styles.deviceOptionSubtitle}>No vincular a ningún dispositivo</Text>
-          </View>
-        </TouchableOpacity>
-
-        {devices.map((device) => (
-          <TouchableOpacity
-            key={device.id}
-            style={[
-              styles.deviceOption,
-              selectedDevice === device.id && styles.deviceOptionSelected,
-            ]}
-            onPress={() => setSelectedDevice(device.id)}
-          >
-            <Ionicons
-              name={selectedDevice === device.id ? 'radio-button-on' : 'radio-button-off'}
-              size={24}
-              color={selectedDevice === device.id ? '#007AFF' : '#999'}
-            />
-            <View style={styles.deviceOptionInfo}>
-              <Text style={styles.deviceOptionTitle}>{device.name || device.imei}</Text>
-              <Text style={styles.deviceOptionSubtitle}>
-                {device.positions?.length > 0
-                  ? `Última ubicación: ${new Date(device.positions[0].createdAt).toLocaleString()}`
-                  : 'Sin ubicaciones registradas'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        {devices.length === 0 && (
-          <View style={styles.emptyDevicesCard}>
-            <Ionicons name="information-circle-outline" size={48} color="#999" />
-            <Text style={styles.emptyDevicesText}>No tienes dispositivos registrados</Text>
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  const renderStepImage = () => {
-    const selectedType = getSelectedEventType();
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <View style={styles.selectedTypeBadge}>
-            <Ionicons name={selectedType?.icon as any} size={20} color={selectedType?.color} />
-            <Text style={[styles.selectedTypeText, { color: selectedType?.color }]}>
-              {selectedType?.label}
-            </Text>
-          </View>
-          <Text style={styles.stepTitle}>¿Tienes una foto?</Text>
-          <Text style={styles.stepSubtitle}>Opcional - Agrega evidencia visual del evento</Text>
+          <Text style={styles.charCounter}>{description.length}/500</Text>
         </View>
+      </View>
 
+      {/* Photo */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Foto (opcional)</Text>
         {imageUri ? (
-          <View style={styles.imagePreviewCard}>
-            <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+          <View style={styles.imagePreview}>
+            <Image source={{ uri: imageUri }} style={styles.previewImage} />
             <TouchableOpacity
-              style={styles.removeImageButton}
+              style={styles.removeImageBtn}
               onPress={() => setImageUri(null)}
             >
-              <Ionicons name="close-circle" size={32} color="#FF3B30" />
+              <Ionicons name="close" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.imageOptionsGrid}>
-            <TouchableOpacity style={styles.imageOption} onPress={takePhoto}>
-              <View style={styles.imageOptionIcon}>
-                <Ionicons name="camera" size={32} color="#007AFF" />
-              </View>
-              <Text style={styles.imageOptionTitle}>Tomar Foto</Text>
+          <View style={styles.photoButtons}>
+            <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
+              <Ionicons name="camera-outline" size={24} color="#007AFF" />
+              <Text style={styles.photoBtnText}>Camara</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.imageOption} onPress={pickImage}>
-              <View style={styles.imageOptionIcon}>
-                <Ionicons name="images" size={32} color="#007AFF" />
-              </View>
-              <Text style={styles.imageOptionTitle}>Galería</Text>
+            <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
+              <Ionicons name="images-outline" size={24} color="#007AFF" />
+              <Text style={styles.photoBtnText}>Galeria</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
-    );
-  };
 
-  const renderStepReview = () => {
-    const selectedType = getSelectedEventType();
-    const selectedDeviceName = selectedDevice
-      ? devices.find(d => d.id === selectedDevice)?.name || 'Dispositivo seleccionado'
-      : 'Sin dispositivo';
-
-    return (
-      <ScrollView style={styles.stepContainer}>
-        <View style={styles.stepHeader}>
-          <Text style={styles.stepTitle}>Revisa los detalles</Text>
-          <Text style={styles.stepSubtitle}>Verifica que todo esté correcto antes de crear el evento</Text>
-        </View>
-
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Tipo de Evento</Text>
-          <View style={[styles.reviewCard, { borderLeftColor: selectedType?.color }]}>
-            <Ionicons name={selectedType?.icon as any} size={24} color={selectedType?.color} />
-            <Text style={styles.reviewCardText}>{selectedType?.label}</Text>
-          </View>
-        </View>
-
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Descripción</Text>
-          <View style={styles.reviewCard}>
-            <Text style={styles.reviewCardText}>{description}</Text>
-          </View>
-        </View>
-
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Ubicación</Text>
-          <View style={styles.reviewCard}>
-            <Ionicons name="location" size={24} color="#007AFF" />
-            <View style={styles.reviewCardInfo}>
-              <Text style={styles.reviewCardText}>
-                {location?.latitude.toFixed(6)}, {location?.longitude.toFixed(6)}
+      {/* Group (if available) */}
+      {adminGroups.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Publicar en</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+            <TouchableOpacity
+              style={[styles.optionChip, !selectedGroup && styles.optionChipSelected]}
+              onPress={() => { setSelectedGroup(null); setIsPublic(true); }}
+            >
+              <Ionicons name="globe-outline" size={16} color={!selectedGroup ? '#fff' : '#666'} />
+              <Text style={[styles.optionChipText, !selectedGroup && styles.optionChipTextSelected]}>
+                Publico
               </Text>
-              <Text style={styles.reviewCardSubtext}>
-                {locationMode === 'current' && 'Ubicación actual'}
-                {locationMode === 'device' && 'Ubicación del dispositivo'}
-                {locationMode === 'manual' && 'Selección manual'}
-              </Text>
+            </TouchableOpacity>
+            {adminGroups.map(group => (
+              <TouchableOpacity
+                key={group.id}
+                style={[styles.optionChip, selectedGroup === group.id && styles.optionChipSelected]}
+                onPress={() => { setSelectedGroup(group.id); setIsPublic(false); }}
+              >
+                <Ionicons name="people-outline" size={16} color={selectedGroup === group.id ? '#fff' : '#666'} />
+                <Text style={[styles.optionChipText, selectedGroup === group.id && styles.optionChipTextSelected]}>
+                  {group.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Spacer for bottom button */}
+      <View style={{ height: 100 }} />
+    </ScrollView>
+  );
+
+  const renderLocationStep = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.locationStepContent}>
+        {/* Back button */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => animateToStep(0)}
+        >
+          <Ionicons name="arrow-back" size={24} color="#333" />
+          <Text style={styles.backButtonText}>Volver</Text>
+        </TouchableOpacity>
+
+        {/* Location Card */}
+        <View style={styles.locationCard}>
+          <Text style={styles.locationCardTitle}>Ubicacion del evento</Text>
+
+          {loadingLocation ? (
+            <View style={styles.locationStatus}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.locationStatusText}>Obteniendo ubicacion...</Text>
+            </View>
+          ) : location ? (
+            <View style={styles.locationWithMap}>
+              {/* Mini Map Preview */}
+              <View style={styles.miniMapContainer}>
+                <MapView
+                  style={styles.miniMap}
+                  region={{
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  rotateEnabled={false}
+                  userInterfaceStyle={isDark ? 'dark' : 'light'}
+                  pitchEnabled={false}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                    }}
+                  >
+                    <View style={[styles.markerContainer, { backgroundColor: selectedTypeConfig?.color || '#007AFF' }]}>
+                      <Ionicons name={selectedTypeConfig?.icon as any || 'megaphone-outline'} size={16} color="#fff" />
+                    </View>
+                  </Marker>
+                </MapView>
+                <View style={[styles.locationBadge, realTimeTracking && styles.locationBadgeDevice, usePhoneDevice && realTimeTracking && styles.locationBadgePhone]}>
+                  <Ionicons
+                    name={realTimeTracking ? (usePhoneDevice ? "phone-portrait" : "radio") : "checkmark-circle"}
+                    size={16}
+                    color={realTimeTracking ? (usePhoneDevice ? '#5856D6' : '#007AFF') : '#34C759'}
+                  />
+                  <Text style={[styles.locationBadgeText, realTimeTracking && styles.locationBadgeTextDevice, usePhoneDevice && realTimeTracking && styles.locationBadgeTextPhone]}>
+                    {realTimeTracking
+                      ? (usePhoneDevice ? 'Desde este telefono' : 'Desde dispositivo GPS')
+                      : 'Ubicacion lista'}
+                  </Text>
+                </View>
+              </View>
+              {/* Only show change location button if NOT using real-time tracking */}
+              {!realTimeTracking ? (
+                <TouchableOpacity
+                  style={styles.changeLocationBtn}
+                  onPress={() => setShowMapPicker(true)}
+                >
+                  <Ionicons name="create-outline" size={18} color="#007AFF" />
+                  <Text style={styles.changeLocationText}>Cambiar ubicacion</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.trackingInfoBox}>
+                  <Ionicons name="information-circle-outline" size={16} color="#8E8E93" />
+                  <Text style={styles.trackingInfoText}>
+                    La ubicacion se obtiene del dispositivo GPS en tiempo real
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.locationStatus}>
+              <Ionicons name="location-outline" size={48} color="#FF3B30" />
+              <Text style={styles.locationErrorText}>No se pudo obtener</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={getCurrentLocation}>
+                <Text style={styles.retryBtnText}>Reintentar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowMapPicker(true)}>
+                <Text style={styles.manualLocationText}>Seleccionar en mapa</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Summary */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Resumen</Text>
+          <View style={styles.summaryRow}>
+            <View style={[styles.summaryTypeBadge, { backgroundColor: selectedTypeConfig?.color || '#007AFF' }]}>
+              <Ionicons name={selectedTypeConfig?.icon as any || 'megaphone-outline'} size={16} color="#fff" />
+              <Text style={styles.summaryTypeText}>{selectedTypeConfig?.label || 'General'}</Text>
             </View>
           </View>
+          <Text style={styles.summaryDescription} numberOfLines={2}>{description}</Text>
+          {imageUri && (
+            <View style={styles.summaryImageBadge}>
+              <Ionicons name="image" size={14} color="#34C759" />
+              <Text style={styles.summaryImageText}>Imagen adjunta</Text>
+            </View>
+          )}
         </View>
+      </View>
 
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Dispositivo</Text>
-          <View style={styles.reviewCard}>
-            <Ionicons name="hardware-chip" size={24} color="#007AFF" />
-            <Text style={styles.reviewCardText}>{selectedDeviceName}</Text>
-          </View>
-        </View>
-
-        {imageUri && (
-          <View style={styles.reviewSection}>
-            <Text style={styles.reviewSectionTitle}>Imagen</Text>
-            <Image source={{ uri: imageUri }} style={styles.reviewImage} />
-          </View>
-        )}
-      </ScrollView>
-    );
-  };
+      {/* Publish Button */}
+      <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12 }]}>
+        <TouchableOpacity
+          style={[styles.publishBtn, (!location || loading) && styles.publishBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={!location || loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="send" size={20} color="#fff" />
+              <Text style={styles.publishBtnText}>Publicar evento</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -548,75 +740,47 @@ export default function AddEventScreen({ navigation }: Props) {
       style={styles.container}
     >
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => {
-            if (currentStep > 0) {
-              setCurrentStep(currentStep - 1);
-            } else {
-              Alert.alert(
-                'Cancelar creación',
-                '¿Estás seguro que deseas cancelar?',
-                [
-                  { text: 'No', style: 'cancel' },
-                  { text: 'Sí, cancelar', onPress: () => navigation.goBack(), style: 'destructive' },
-                ]
-              );
-            }
-          }}
-          style={styles.headerButton}
-        >
-          <Ionicons name={currentStep > 0 ? 'arrow-back' : 'close'} size={28} color="#262626" />
-        </TouchableOpacity>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.headerSide}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
+            <Ionicons name="close" size={24} color="#333" />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerTitle}>Nuevo Evento</Text>
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerSide}>
+          <View style={styles.stepIndicator}>
+            <View style={[styles.stepDot, currentStep >= 0 && styles.stepDotActive]} />
+            <View style={[styles.stepDot, currentStep >= 1 && styles.stepDotActive]} />
+          </View>
+        </View>
       </View>
 
-      {renderStepIndicator()}
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      {/* Steps Container */}
+      <Animated.View
+        style={[
+          styles.stepsWrapper,
+          { transform: [{ translateX: slideAnim }] },
+        ]}
       >
-        {currentStep === STEPS.TYPE && renderStepType()}
-        {currentStep === STEPS.DESCRIPTION && renderStepDescription()}
-        {currentStep === STEPS.LOCATION && renderStepLocation()}
-        {currentStep === STEPS.DEVICE && renderStepDevice()}
-        {currentStep === STEPS.IMAGE && renderStepImage()}
-        {currentStep === STEPS.REVIEW && renderStepReview()}
-      </ScrollView>
+        {renderDetailsStep()}
+        {renderLocationStep()}
+      </Animated.View>
 
-      {/* Footer Buttons */}
-      <View style={styles.footer}>
-        {currentStep === STEPS.REVIEW ? (
+      {/* Continue Button (only on step 0) */}
+      {currentStep === 0 && (
+        <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12 }]}>
           <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
+            style={[styles.continueBtn, !description.trim() && styles.continueBtnDisabled]}
+            onPress={handleNextFromDetails}
+            disabled={!description.trim()}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Text style={styles.submitButtonText}>Crear Evento</Text>
-                <Ionicons name="checkmark" size={24} color="#fff" />
-              </>
-            )}
+            <Text style={styles.continueBtnText}>Continuar</Text>
+            <Ionicons name="arrow-forward" size={20} color="#fff" />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.continueButton, !canContinue() && styles.continueButtonDisabled]}
-            onPress={() => setCurrentStep(currentStep + 1)}
-            disabled={!canContinue()}
-          >
-            <Text style={styles.continueButtonText}>Continuar</Text>
-            <Ionicons name="arrow-forward" size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
 
+      {/* Map Picker */}
       <MapLocationPicker
         visible={showMapPicker}
         onClose={() => setShowMapPicker(false)}
@@ -637,353 +801,570 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: Platform.OS === 'ios' ? 50 : 12,
+    paddingBottom: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#E5E5EA',
+  },
+  headerSide: {
+    width: 60,
   },
   headerButton: {
     padding: 8,
+    marginLeft: -8,
   },
   headerTitle: {
-    fontSize: 18,
+    flex: 1,
+    fontSize: 17,
     fontWeight: '600',
     color: '#262626',
-  },
-  headerSpacer: {
-    width: 44,
-  },
-  stepIndicatorContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  progressBarBackground: {
-    height: 4,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 2,
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    height: 4,
-    backgroundColor: '#007AFF',
-    borderRadius: 2,
-  },
-  stepText: {
-    fontSize: 13,
-    color: '#666',
     textAlign: 'center',
   },
-  scrollView: {
-    flex: 1,
+  stepIndicator: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'flex-end',
   },
-  scrollContent: {
-    paddingBottom: 20,
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E5E5EA',
+  },
+  stepDotActive: {
+    backgroundColor: '#007AFF',
+  },
+  stepsWrapper: {
+    flexDirection: 'row',
+    width: SCREEN_WIDTH * 2,
+    flex: 1,
   },
   stepContainer: {
+    width: SCREEN_WIDTH,
     flex: 1,
+  },
+  stepContent: {
     padding: 20,
   },
-  stepHeader: {
+  section: {
     marginBottom: 24,
   },
-  stepTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#262626',
-    marginBottom: 8,
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
-  stepSubtitle: {
-    fontSize: 15,
-    color: '#666',
-    lineHeight: 22,
-  },
-  eventTypesGrid: {
+  typeSelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
   },
-  eventTypeCard: {
-    width: '48%',
-    aspectRatio: 1,
-    borderWidth: 2,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fafafa',
-  },
-  eventTypeCardSelected: {
-    backgroundColor: '#f0f9ff',
-  },
-  eventTypeIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  eventTypeLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-  },
-  selectedTypeBadge: {
+  typeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#f9f9f9',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 20,
-    marginBottom: 16,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    gap: 6,
   },
-  selectedTypeText: {
+  typeChipText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  descriptionInput: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+  typeChipTextSelected: {
+    color: '#fff',
+  },
+  inputContainer: {
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  descriptionInput: {
     fontSize: 16,
-    color: '#262626',
-    minHeight: 160,
+    lineHeight: 22,
+    color: '#1C1C1E',
+    minHeight: 100,
     textAlignVertical: 'top',
-    backgroundColor: '#fafafa',
   },
   charCounter: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#999',
     textAlign: 'right',
     marginTop: 8,
   },
-  locationSelectedCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#34C759',
-    marginBottom: 20,
-  },
-  locationSelectedInfo: {
-    flex: 1,
-  },
-  locationSelectedTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: 4,
-  },
-  locationSelectedCoords: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 2,
-  },
-  locationSelectedMode: {
-    fontSize: 12,
-    color: '#34C759',
-    fontWeight: '500',
-  },
-  locationOptionsGrid: {
+  photoButtons: {
     flexDirection: 'row',
     gap: 12,
   },
-  locationOption: {
+  photoBtn: {
     flex: 1,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    alignItems: 'center',
-    backgroundColor: '#fafafa',
-  },
-  locationOptionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#f0f9ff',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-  },
-  locationOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: 4,
-  },
-  locationOptionSubtitle: {
-    fontSize: 13,
-    color: '#666',
-  },
-  deviceOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    backgroundColor: '#fff',
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 12,
-    marginBottom: 12,
-    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    gap: 8,
   },
-  deviceOptionSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#f0f9ff',
-  },
-  deviceOptionInfo: {
-    flex: 1,
-  },
-  deviceOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-    marginBottom: 4,
-  },
-  deviceOptionSubtitle: {
-    fontSize: 13,
-    color: '#666',
-  },
-  emptyDevicesCard: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyDevicesText: {
+  photoBtnText: {
     fontSize: 15,
-    color: '#999',
-    marginTop: 12,
-  },
-  imageOptionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  imageOption: {
-    flex: 1,
-    padding: 24,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    alignItems: 'center',
-    borderStyle: 'dashed',
-    backgroundColor: '#fafafa',
-  },
-  imageOptionIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#f0f9ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  imageOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#262626',
-  },
-  imagePreviewCard: {
-    position: 'relative',
-    borderRadius: 12,
-    overflow: 'hidden',
+    fontWeight: '500',
+    color: '#007AFF',
   },
   imagePreview: {
-    width: '100%',
-    height: 300,
-    borderRadius: 12,
+    position: 'relative',
   },
-  removeImageButton: {
+  previewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  removeImageBtn: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipScroll: {
+    flexDirection: 'row',
+  },
+  optionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    marginRight: 8,
+  },
+  optionChipSelected: {
+    backgroundColor: '#007AFF',
+  },
+  phoneChipSelected: {
+    backgroundColor: '#5856D6',
+  },
+  optionChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  optionChipTextSelected: {
+    color: '#fff',
+  },
+  locationStepContent: {
+    flex: 1,
+    padding: 20,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 20,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  locationCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
+    paddingTop: 20,
+    paddingBottom: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    overflow: 'hidden',
   },
-  reviewSection: {
-    marginBottom: 24,
-  },
-  reviewSectionTitle: {
-    fontSize: 14,
+  locationCardTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#666',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    color: '#1C1C1E',
+    marginBottom: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
-  reviewCard: {
+  locationStatus: {
+    alignItems: 'center',
+  },
+  locationWithMap: {
+    alignItems: 'center',
+  },
+  miniMapContainer: {
+    width: '100%',
+    height: 180,
+    overflow: 'hidden',
+    marginBottom: 12,
+    position: 'relative',
+  },
+  miniMap: {
+    width: '100%',
+    height: '100%',
+  },
+  markerContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  locationBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  locationBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#34C759',
+  },
+  locationBadgeDevice: {
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  },
+  locationBadgeTextDevice: {
+    color: '#007AFF',
+  },
+  locationBadgePhone: {
+    backgroundColor: 'rgba(88, 86, 214, 0.1)',
+  },
+  locationBadgeTextPhone: {
+    color: '#5856D6',
+  },
+  trackingInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  trackingInfoText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    flex: 1,
+  },
+  trackingToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F8F8',
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  trackingToggleActive: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#34C759',
+  },
+  trackingToggleLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 16,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
-  },
-  reviewCardInfo: {
     flex: 1,
   },
-  reviewCardText: {
-    fontSize: 16,
-    color: '#262626',
-    lineHeight: 22,
+  trackingToggleText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1C1C1E',
   },
-  reviewCardSubtext: {
-    fontSize: 13,
-    color: '#666',
+  trackingToggleTextActive: {
+    color: '#34C759',
+  },
+  trackingToggleHint: {
+    fontSize: 12,
+    color: '#8E8E93',
     marginTop: 2,
   },
-  reviewImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
+  toggleSwitch: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#E5E5EA',
+    padding: 2,
   },
-  footer: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+  toggleSwitchActive: {
+    backgroundColor: '#34C759',
+  },
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleKnobActive: {
+    transform: [{ translateX: 18 }],
+  },
+  changeLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  changeLocationText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#007AFF',
+  },
+  locationStatusText: {
+    fontSize: 15,
+    color: '#666',
+    marginTop: 12,
+  },
+  locationErrorText: {
+    fontSize: 15,
+    color: '#666',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  retryBtn: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginBottom: 12,
+  },
+  retryBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  manualLocationText: {
+    fontSize: 15,
+    color: '#007AFF',
+  },
+  summaryCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  summaryTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  summaryRow: {
+    marginBottom: 8,
+  },
+  summaryTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 6,
+  },
+  summaryTypeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  summaryDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  summaryImageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  summaryImageText: {
+    fontSize: 13,
+    color: '#34C759',
+  },
+  bottomAction: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
     backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: '#F0F0F0',
   },
-  continueButton: {
+  continueBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     backgroundColor: '#007AFF',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
+    gap: 8,
   },
-  continueButtonDisabled: {
+  continueBtnDisabled: {
     opacity: 0.5,
   },
-  continueButtonText: {
+  continueBtnText: {
     fontSize: 17,
     fontWeight: '600',
     color: '#fff',
   },
-  submitButton: {
+  publishBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     backgroundColor: '#34C759',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
+    gap: 8,
   },
-  submitButtonDisabled: {
+  publishBtnDisabled: {
     opacity: 0.5,
   },
-  submitButtonText: {
+  publishBtnText: {
     fontSize: 17,
     fontWeight: '600',
     color: '#fff',
+  },
+  urgentToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F8F8',
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  urgentToggleActive: {
+    backgroundColor: '#FFEBEB',
+    borderColor: '#FF3B30',
+  },
+  urgentToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  urgentToggleText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1C1C1E',
+  },
+  urgentToggleTextActive: {
+    color: '#FF3B30',
+  },
+  urgentToggleHint: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  urgentToggleSwitchActive: {
+    backgroundColor: '#FF3B30',
+  },
+  // Device Section Styles - Modern List Design
+  deviceSection: {
+    marginBottom: 24,
+  },
+  deviceList: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  deviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  deviceRowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  deviceRowContent: {
+    flex: 1,
+  },
+  deviceRowTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1C1C1E',
+    marginBottom: 2,
+  },
+  deviceRowSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D1D1D6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOuterSelected: {
+    borderColor: '#007AFF',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#007AFF',
+  },
+  trackingInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  trackingInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#34C759',
+    lineHeight: 18,
   },
 });

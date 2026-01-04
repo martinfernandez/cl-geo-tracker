@@ -18,15 +18,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       supportsTablet: true,
       bundleIdentifier: environment === 'production'
-        ? 'com.peek.app'
-        : `com.peek.app.${environment}`,
-      associatedDomains: [
-        environment === 'staging'
-          ? 'applinks:cl-geo-tracker-staging.up.railway.app'
-          : 'applinks:cl-geo-tracker-production.up.railway.app',
-      ],
+        ? 'com.martinfernandez.peektracker'
+        : `com.martinfernandez.peektracker.${environment}`,
       infoPlist: {
-        UIBackgroundModes: ['location', 'fetch', 'remote-notification'],
+        UIBackgroundModes: ['location', 'fetch'],
         NSLocationAlwaysAndWhenInUseUsageDescription:
           'PeeK necesita acceso a tu ubicación para compartirla con tu grupo incluso cuando la app está en segundo plano.',
         NSLocationAlwaysUsageDescription:

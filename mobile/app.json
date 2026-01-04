@@ -1,32 +1,88 @@
 {
   "expo": {
-    "name": "GPS Tracker",
-    "slug": "gps-tracker",
+    "name": "Peek",
+    "slug": "peek-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "peek",
     "splash": {
-      "backgroundColor": "#ffffff"
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f5f5"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gpstracker.app"
+      "bundleIdentifier": "com.martinfernandez.peektracker",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location",
+          "fetch"
+        ],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "GPS Tracker necesita acceso a tu ubicacion para compartirla con tu grupo incluso cuando la app esta en segundo plano.",
+        "NSLocationAlwaysUsageDescription": "GPS Tracker necesita acceso a tu ubicacion para compartirla con tu grupo incluso cuando la app esta en segundo plano.",
+        "NSLocationWhenInUseUsageDescription": "GPS Tracker necesita acceso a tu ubicacion para mostrarte en el mapa."
+      }
     },
     "android": {
       "package": "com.gpstracker.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#f5f5f5"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "cl-geo-tracker-production.up.railway.app",
+              "pathPrefix": "/e/"
+            },
+            {
+              "scheme": "geotracker",
+              "host": "event"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       [
+        "expo-dev-client",
+        {
+          "launchModeExperimental": "most-recent"
+        }
+      ],
+      [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow GPS Tracker to access your location."
+          "locationAlwaysAndWhenInUsePermission": "GPS Tracker necesita acceso a tu ubicacion para compartirla con tu grupo.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
@@ -36,6 +92,11 @@
           "cameraPermission": "Allow GPS Tracker to use your camera."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e365a376-c27d-47b9-9855-ce053b6bffc8"
+      }
+    }
   }
 }

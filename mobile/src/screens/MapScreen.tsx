@@ -1,343 +1,162 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Animated, Modal, Platform } from 'react-native';
-import MapView, { Marker, Callout, Circle, Region, Polyline } from 'react-native-maps';
-import { useDeviceStore } from '../store/useDeviceStore';
-import { deviceApi, eventApi, api, Event, areaApi } from '../services/api';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, Modal, Platform, Animated } from 'react-native';
+import MapView, { Marker, Callout, Circle, Polyline } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMapState } from '../hooks/useMapState';
 import SlidingEventFeed from '../components/SlidingEventFeed';
 import EventFilterModal from '../components/EventFilterModal';
 import { PulsingMarker } from '../components/PulsingMarker';
+import GroupModeChip from '../components/GroupModeChip';
+import GroupMembersModal from '../components/GroupMembersModal';
+import { PeekLogo } from '../components/PeekLogo';
+import { PeekModeBanner } from '../components/PeekModeBanner';
+import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
+import { colors as staticColors, radius } from '../theme/colors';
+
+// Animated Hamburger Menu Icon Component
+const AnimatedMenuIcon = ({ isOpen, color }: { isOpen: boolean; color: string }) => {
+  const rotation = useRef(new Animated.Value(0)).current;
+  const topLineY = useRef(new Animated.Value(0)).current;
+  const bottomLineY = useRef(new Animated.Value(0)).current;
+  const middleOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(rotation, {
+        toValue: isOpen ? 1 : 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(topLineY, {
+        toValue: isOpen ? 1 : 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(bottomLineY, {
+        toValue: isOpen ? 1 : 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(middleOpacity, {
+        toValue: isOpen ? 0 : 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isOpen]);
+
+  const topRotate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg'],
+  });
+
+  const bottomRotate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-45deg'],
+  });
+
+  const topTranslateY = topLineY.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 6],
+  });
+
+  const bottomTranslateY = bottomLineY.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -6],
+  });
+
+  return (
+    <View style={menuIconStyles.container}>
+      <Animated.View
+        style={[
+          menuIconStyles.line,
+          { backgroundColor: color },
+          {
+            transform: [
+              { translateY: topTranslateY },
+              { rotate: topRotate },
+            ],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          menuIconStyles.line,
+          { backgroundColor: color, opacity: middleOpacity },
+        ]}
+      />
+      <Animated.View
+        style={[
+          menuIconStyles.line,
+          { backgroundColor: color },
+          {
+            transform: [
+              { translateY: bottomTranslateY },
+              { rotate: bottomRotate },
+            ],
+          },
+        ]}
+      />
+    </View>
+  );
+};
+
+const menuIconStyles = StyleSheet.create({
+  container: {
+    width: 20,
+    height: 14,
+    justifyContent: 'space-between',
+  },
+  line: {
+    width: 20,
+    height: 2,
+    borderRadius: 1,
+  },
+});
 
 export function MapScreen({ navigation, route }: any) {
-  const { devices, setDevices, updateDevice } = useDeviceStore();
-  const mapRef = useRef<MapView>(null);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [filters, setFilters] = useState({
-    status: 'ALL',
-    type: 'ALL',
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
-  });
-  const [mapRegion, setMapRegion] = useState<Region | null>(null);
-  const [areaOfInterest, setAreaOfInterest] = useState<{
-    latitude: number;
-    longitude: number;
-    radius: number;
-  } | null>(null);
-  const [selectedArea, setSelectedArea] = useState<{
-    latitude: number;
-    longitude: number;
-    radius: number;
-    name: string;
-  } | null>(null);
-  const regionChangeTimeout = useRef<NodeJS.Timeout | null>(null);
-  const [trackedEventPositions, setTrackedEventPositions] = useState<{
-    [eventId: string]: Array<{ latitude: number; longitude: number }>;
-  }>({});
-  const [showMenu, setShowMenu] = useState(false);
-  const [totalPendingRequests, setTotalPendingRequests] = useState(0);
+  const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
 
-  useEffect(() => {
-    loadDevices();
-    loadUserProfile();
-
-    const interval = setInterval(() => {
-      loadDevices();
-      if (mapRegion) {
-        loadEvents();
-      }
-    }, 30000);
-
-    return () => {
-      clearInterval(interval);
-      if (regionChangeTimeout.current) {
-        clearTimeout(regionChangeTimeout.current);
-      }
-    };
-  }, []);
-
-  // Handle refresh parameter from navigation
-  useEffect(() => {
-    if (route.params?.refresh) {
-      loadDevices();
-      loadEvents();
-      loadUserProfile(); // Reload area of interest
-      // Reset the param to avoid triggering on every render
-      navigation.setParams({ refresh: undefined });
-    }
-  }, [route.params?.refresh]);
-
-  // Handle centerArea parameter from navigation
-  useEffect(() => {
-    if (route.params?.centerArea && mapRef.current) {
-      const { latitude, longitude, radius, name } = route.params.centerArea;
-
-      // Set the selected area to display it on map
-      setSelectedArea({ latitude, longitude, radius, name });
-
-      // Calculate region based on radius to show the entire area
-      const radiusInKm = radius / 1000;
-      const latitudeDelta = radiusInKm / 111; // 1 degree latitude ≈ 111 km
-      const longitudeDelta = radiusInKm / (111 * Math.cos(latitude * (Math.PI / 180)));
-
-      mapRef.current.animateToRegion(
-        {
-          latitude,
-          longitude,
-          latitudeDelta: latitudeDelta * 2.5, // Add some padding
-          longitudeDelta: longitudeDelta * 2.5,
-        },
-        1000
-      );
-
-      // Reset the param to avoid triggering on every render
-      navigation.setParams({ centerArea: undefined });
-    }
-  }, [route.params?.centerArea]);
-
-  // Reload area of interest and pending requests when screen comes into focus
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadUserProfile();
-      loadPendingRequests();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  // Load events when map region is set for the first time
-  useEffect(() => {
-    if (mapRegion) {
-      loadEvents();
-    } else {
-      // If mapRegion hasn't been set yet, set it to initial region to trigger load
-      const initialRegion = {
-        latitude: -34.6037,
-        longitude: -58.3816,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      };
-      setMapRegion(initialRegion);
-    }
-  }, [mapRegion]);
-
-  // Fit map to area of interest when loaded
-  useEffect(() => {
-    if (areaOfInterest && mapRef.current) {
-      // Calculate the region to show the full area of interest
-      // Convert radius from meters to degrees (approximate)
-      const radiusInDegrees = areaOfInterest.radius / 111320; // 1 degree ≈ 111.32km
-
-      mapRef.current.animateToRegion({
-        latitude: areaOfInterest.latitude,
-        longitude: areaOfInterest.longitude,
-        latitudeDelta: radiusInDegrees * 2.5, // Add some padding
-        longitudeDelta: radiusInDegrees * 2.5,
-      }, 1000);
-    }
-  }, [areaOfInterest]);
-
-  const loadDevices = async () => {
-    try {
-      const data = await deviceApi.getAll();
-      setDevices(data);
-    } catch (error) {
-      console.error('Error loading devices:', error);
-    }
-  };
-
-  const loadUserProfile = async () => {
-    try {
-      const response = await api.get('/users/profile');
-      if (
-        response.data.areaOfInterestLatitude &&
-        response.data.areaOfInterestLongitude &&
-        response.data.areaOfInterestRadius
-      ) {
-        setAreaOfInterest({
-          latitude: response.data.areaOfInterestLatitude,
-          longitude: response.data.areaOfInterestLongitude,
-          radius: response.data.areaOfInterestRadius,
-        });
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    }
-  };
-
-  const loadPendingRequests = async () => {
-    try {
-      const areas = await areaApi.getMyAreas();
-      const total = areas.reduce((sum, area) => sum + (area.pendingRequestsCount || 0), 0);
-      setTotalPendingRequests(total);
-    } catch (error) {
-      console.error('Error loading pending requests:', error);
-    }
-  };
-
-  const loadEvents = async () => {
-    try {
-      if (!mapRegion) return;
-
-      const { latitude, longitude, latitudeDelta, longitudeDelta } = mapRegion;
-      const northEast = `${latitude + latitudeDelta / 2},${longitude + longitudeDelta / 2}`;
-      const southWest = `${latitude - latitudeDelta / 2},${longitude - longitudeDelta / 2}`;
-
-      const params: any = {
-        northEast,
-        southWest,
-      };
-
-      if (filters.status !== 'ALL') {
-        params.status = filters.status;
-      }
-
-      if (filters.type !== 'ALL') {
-        params.type = filters.type;
-      }
-
-      params.sortBy = filters.sortBy;
-      params.sortOrder = filters.sortOrder;
-
-      const data = await eventApi.getPublicByRegion(params);
-      console.log('Loaded events:', data.map((e: any) => ({
-        id: e.id,
-        type: e.type,
-        realTimeTracking: e.realTimeTracking,
-        status: e.status,
-        deviceId: e.deviceId
-      })));
-      setEvents(data);
-    } catch (error) {
-      console.error('Error loading events:', error);
-    }
-  };
-
-  const loadTrackedEventPositions = async () => {
-    try {
-      // Filter events with real-time tracking enabled
-      const trackedEvents = events.filter(
-        (event: any) => event.realTimeTracking && event.status === 'IN_PROGRESS'
-      );
-
-      console.log(`[TRACKING] Found ${trackedEvents.length} tracked events:`, trackedEvents.map((e: any) => ({
-        id: e.id,
-        type: e.type,
-        isUrgent: e.isUrgent,
-        realTimeTracking: e.realTimeTracking,
-        status: e.status
-      })));
-
-      if (trackedEvents.length === 0) {
-        console.log('[TRACKING] No tracked events found - clearing positions');
-        setTrackedEventPositions({});
-        return;
-      }
-
-      // Create a completely new object to avoid reference issues
-      const positionsData: { [key: string]: Array<{ latitude: number; longitude: number }> } = {};
-
-      await Promise.all(
-        trackedEvents.map(async (event: any) => {
-          try {
-            console.log(`[TRACKING] Loading positions for event ${event.id}...`);
-            const data = await eventApi.getEventPositions(event.id);
-            console.log(`[TRACKING] Event ${event.id}: Received ${data.positions?.length || 0} positions`);
-
-            if (data.positions && data.positions.length > 0) {
-              // Create a new array with new objects to avoid any reference issues
-              positionsData[event.id] = data.positions.map((pos: any) => ({
-                latitude: Number(pos.latitude),
-                longitude: Number(pos.longitude),
-              }));
-              console.log(`[TRACKING] Event ${event.id}: Mapped ${positionsData[event.id].length} positions`);
-              console.log(`[TRACKING] Event ${event.id}: First position:`, positionsData[event.id][0]);
-              console.log(`[TRACKING] Event ${event.id}: Last position:`, positionsData[event.id][positionsData[event.id].length - 1]);
-            } else {
-              console.log(`[TRACKING] Event ${event.id}: No positions received`);
-            }
-          } catch (error) {
-            console.error(`[TRACKING] Error loading positions for event ${event.id}:`, error);
-          }
-        })
-      );
-
-      console.log('[TRACKING] Setting tracked event positions - Total events:', Object.keys(positionsData).length);
-      console.log('[TRACKING] Position counts:', Object.entries(positionsData).map(([id, pos]) => `${id}: ${pos.length}`));
-
-      // Replace the entire state with the new data
-      setTrackedEventPositions(positionsData);
-      console.log('[TRACKING] State updated with', Object.keys(positionsData).length, 'tracked events');
-    } catch (error) {
-      console.error('[TRACKING] Error loading tracked event positions:', error);
-    }
-  };
-
-  const handleRegionChangeComplete = (region: Region) => {
-    // Clear previous timeout
-    if (regionChangeTimeout.current) {
-      clearTimeout(regionChangeTimeout.current);
-    }
-
-    // Set new timeout to update region after user stops moving
-    regionChangeTimeout.current = setTimeout(() => {
-      setMapRegion(region);
-    }, 500); // Wait 500ms after user stops moving
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([loadDevices(), loadEvents()]);
-    setRefreshing(false);
-  };
-
-  const handleFilterApply = (newFilters: any) => {
-    setFilters(newFilters);
-  };
-
-  useEffect(() => {
-    if (mapRegion) {
-      loadEvents();
-    }
-  }, [mapRegion, filters]);
-
-  // Get tracked event IDs using useMemo to prevent unnecessary recalculations
-  const trackedEventIds = useMemo(() => {
-    return events
-      .filter((event: any) => event.realTimeTracking && event.status === 'IN_PROGRESS')
-      .map((event: any) => event.id)
-      .sort()
-      .join(',');
-  }, [events]);
-
-  // Load tracked event positions when tracked event IDs change
-  useEffect(() => {
-    if (trackedEventIds) {
-      loadTrackedEventPositions();
-    } else {
-      setTrackedEventPositions({});
-    }
-  }, [trackedEventIds]);
-
-  // Poll tracked event positions every 30 seconds
-  useEffect(() => {
-    if (!trackedEventIds) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      loadTrackedEventPositions();
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [trackedEventIds]);
-
-  // Filter devices with valid positions
-  const devicesWithPosition = devices.filter((device: any) => {
-    const lastPosition = device.positions?.[0];
-    return lastPosition && lastPosition.latitude && lastPosition.longitude;
-  });
+  // Use the centralized map state hook
+  const {
+    mapRef,
+    userLocation,
+    mapRegion,
+    trackedEventPositions,
+    displayEvents,
+    activeGroup,
+    clearActiveGroup,
+    groupPositions,
+    selectedMember,
+    showGroupMembersModal,
+    setShowGroupMembersModal,
+    refreshing,
+    showFilterModal,
+    setShowFilterModal,
+    showMenu,
+    setShowMenu,
+    feedMinimized,
+    showRoutes,
+    setShowRoutes,
+    filters,
+    areaOfInterest,
+    selectedArea,
+    userProfile,
+    totalPendingRequests,
+    devicesWithPosition,
+    isPeekMode,
+    handlePeekModeToggle,
+    handleRegionChangeComplete,
+    handleRefresh,
+    handleFilterApply,
+    handleSelectMember,
+    handleMapReady,
+    centerOnUserLocation,
+    loadGroupData,
+  } = useMapState({ navigation, route });
 
   return (
     <View style={styles.container}>
@@ -350,24 +169,27 @@ export function MapScreen({ navigation, route }: any) {
           latitudeDelta: 0.1,
           longitudeDelta: 0.1,
         }}
+        onMapReady={handleMapReady}
         onRegionChangeComplete={handleRegionChangeComplete}
+        showsUserLocation={false}
+        userInterfaceStyle={isDark ? 'dark' : 'light'}
       >
-        {/* Area of Interest Circle */}
-        {areaOfInterest && (
+        {/* Area of Interest Circle - Only show when NOT in group mode */}
+        {!activeGroup && areaOfInterest && (
           <Circle
             center={{
               latitude: areaOfInterest.latitude,
               longitude: areaOfInterest.longitude,
             }}
             radius={areaOfInterest.radius}
-            fillColor="rgba(0, 122, 255, 0.1)"
-            strokeColor="rgba(0, 122, 255, 0.5)"
+            fillColor={theme.map.areaFill}
+            strokeColor={theme.map.areaStroke}
             strokeWidth={2}
           />
         )}
 
-        {/* Selected Area Circle (from "Ver" button) */}
-        {selectedArea && (
+        {/* Selected Area Circle (from "Ver" button) - Only show when NOT in group mode */}
+        {!activeGroup && selectedArea && (
           <>
             <Circle
               center={{
@@ -375,8 +197,8 @@ export function MapScreen({ navigation, route }: any) {
                 longitude: selectedArea.longitude,
               }}
               radius={selectedArea.radius}
-              fillColor="rgba(255, 59, 48, 0.15)"
-              strokeColor="rgba(255, 59, 48, 0.6)"
+              fillColor={theme.error.subtle}
+              strokeColor={theme.error.main}
               strokeWidth={2}
             />
             <Marker
@@ -384,7 +206,7 @@ export function MapScreen({ navigation, route }: any) {
                 latitude: selectedArea.latitude,
                 longitude: selectedArea.longitude,
               }}
-              pinColor="#FF3B30"
+              pinColor={theme.error.main}
             >
               <Callout>
                 <View style={styles.callout}>
@@ -398,9 +220,34 @@ export function MapScreen({ navigation, route }: any) {
           </>
         )}
 
-        {/* Device Markers */}
-        {devicesWithPosition.map((device: any) => {
+        {/* User Location Marker - Shows user's initial, smaller so it doesn't obstruct other markers */}
+        {userLocation && (
+          <Marker
+            coordinate={userLocation}
+            anchor={{ x: 0.5, y: 0.5 }}
+            zIndex={0}
+          >
+            <View style={styles.userLocationMarker}>
+              <Text style={styles.userLocationMarkerText}>
+                {userProfile?.name?.charAt(0)?.toUpperCase() || '?'}
+              </Text>
+            </View>
+            <Callout>
+              <View style={styles.callout}>
+                <Text style={styles.calloutTitle}>Tu ubicación</Text>
+                <Text style={styles.calloutText}>
+                  {userProfile?.name || 'Usuario'}
+                </Text>
+              </View>
+            </Callout>
+          </Marker>
+        )}
+
+        {/* Device Markers - Only show when NOT in group mode */}
+        {!activeGroup && devicesWithPosition.map((device: any) => {
           const position = device.positions[0];
+          const deviceColor = device.color || '#007AFF';
+          const deviceInitial = (device.name || device.imei || '?').charAt(0).toUpperCase();
 
           return (
             <Marker
@@ -410,8 +257,16 @@ export function MapScreen({ navigation, route }: any) {
                 longitude: position.longitude,
               }}
               rotation={position.heading || 0}
-              pinColor="blue"
+              anchor={{ x: 0.5, y: 0.5 }}
+              zIndex={1}
             >
+              <View style={[styles.deviceMarker, { backgroundColor: deviceColor }]}>
+                <View style={styles.deviceMarkerInner}>
+                  <Text style={[styles.deviceMarkerText, { color: deviceColor }]}>
+                    {deviceInitial}
+                  </Text>
+                </View>
+              </View>
               <Callout>
                 <View style={styles.callout}>
                   <Text style={styles.calloutTitle}>
@@ -426,7 +281,7 @@ export function MapScreen({ navigation, route }: any) {
                     </Text>
                   )}
                   <Text style={styles.calloutText}>
-                    {new Date(position.timestamp).toLocaleString('es')}
+                    {new Date(position.createdAt || position.timestamp).toLocaleString('es')}
                   </Text>
                 </View>
               </Callout>
@@ -434,100 +289,224 @@ export function MapScreen({ navigation, route }: any) {
           );
         })}
 
-        {/* Event Markers (public events from region) */}
-        {events.map((event: any) => {
+        {/* Group Member Positions - Only show when in group mode */}
+        {activeGroup && groupPositions.map((pos: any, index: number) => {
+          const isPhone = pos.type === 'PHONE';
+          const isSelected = selectedMember?.memberId === pos.memberId && selectedMember?.deviceId === pos.deviceId;
+          const markerColor = isSelected ? '#FF3B30' : (isPhone ? '#34C759' : '#007AFF');
+          const initial = pos.memberName?.charAt(0)?.toUpperCase() || '?';
+          const markerKey = `group-pos-${pos.memberId}-${pos.type}-${pos.deviceId || 'phone'}`;
+
+          return (
+            <Marker
+              key={markerKey}
+              coordinate={{
+                latitude: pos.latitude,
+                longitude: pos.longitude,
+              }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              zIndex={isSelected ? 999 : 1}
+            >
+              <View style={[
+                styles.groupMarker,
+                { backgroundColor: markerColor },
+                isSelected && styles.selectedGroupMarker
+              ]}>
+                <View style={[
+                  styles.groupMarkerInner,
+                  isSelected && styles.selectedGroupMarkerInner
+                ]}>
+                  <Text style={[
+                    styles.groupMarkerText,
+                    isSelected && styles.selectedGroupMarkerText
+                  ]}>{initial}</Text>
+                </View>
+              </View>
+              <Callout>
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>
+                    {pos.memberName}
+                  </Text>
+                  <Text style={styles.calloutText}>
+                    {isPhone ? 'Telefono' : pos.deviceName || 'Dispositivo JX10'}
+                  </Text>
+                  {pos.speed !== null && pos.speed !== undefined && (
+                    <Text style={styles.calloutText}>
+                      Velocidad: {pos.speed.toFixed(1)} km/h
+                    </Text>
+                  )}
+                  <Text style={styles.calloutText}>
+                    {new Date(pos.timestamp).toLocaleString('es')}
+                  </Text>
+                </View>
+              </Callout>
+            </Marker>
+          );
+        })}
+
+        {/* Selected Member Highlight Circle */}
+        {selectedMember && (
+          <Circle
+            center={{
+              latitude: selectedMember.latitude,
+              longitude: selectedMember.longitude,
+            }}
+            radius={50}
+            fillColor={theme.error.subtle}
+            strokeColor={theme.error.main}
+            strokeWidth={2}
+          />
+        )}
+
+        {/* Event Markers */}
+        {displayEvents.map((event: any) => {
           const isActiveUrgent = event.isUrgent && event.status === 'IN_PROGRESS';
 
           return (
             <Marker
-              key={`public-event-${event.id}`}
+              key={`event-${event.id}`}
               coordinate={{
                 latitude: event.latitude,
                 longitude: event.longitude,
               }}
               anchor={{ x: 0.5, y: 0.5 }}
+              onCalloutPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
             >
               {isActiveUrgent ? (
-                <PulsingMarker size={16} color="#FF3B30" />
+                <PulsingMarker size={16} color={theme.map.eventUrgent} />
               ) : (
                 <View
                   style={[
                     styles.eventMarker,
-                    { backgroundColor: event.isUrgent ? '#FF3B30' : '#FF9500' },
+                    { backgroundColor: event.isUrgent ? theme.map.eventUrgent : theme.map.eventNormal },
                   ]}
                 />
               )}
-              <Callout>
-                <View style={styles.callout}>
-                  <Text style={[styles.calloutTitle, event.isUrgent && styles.urgentTitle]}>
-                    {event.isUrgent && '🚨 URGENTE: '}
-                    {event.realTimeTracking && '📍 '}
-                    {event.type}
-                  </Text>
-                  <Text style={styles.calloutText}>
+              <Callout tooltip={false}>
+                <TouchableOpacity
+                  style={styles.callout}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.calloutTitleRow}>
+                    {event.isUrgent && <UrgentPulsingDot size="small" />}
+                    <Text style={[styles.calloutTitle, event.isUrgent && styles.urgentTitle]}>
+                      {event.realTimeTracking && '📍 '}
+                      {event.type}
+                    </Text>
+                  </View>
+                  <Text style={styles.calloutText} numberOfLines={2}>
                     {event.description}
                   </Text>
                   <Text style={styles.calloutText}>
                     Estado: {event.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
                   </Text>
-                  {event.realTimeTracking && (
+                  {activeGroup && event.creatorName && (
                     <Text style={styles.calloutText}>
-                      🔴 Rastreo en tiempo real activo
+                      Creado por: {event.creatorName}
                     </Text>
                   )}
-                  <Text style={styles.calloutText}>
-                    {new Date(event.createdAt).toLocaleString('es')}
+                  <Text style={[styles.calloutText, styles.calloutHint]}>
+                    Toca para ver detalles
                   </Text>
-                </View>
+                </TouchableOpacity>
               </Callout>
             </Marker>
           );
         })}
 
-        {/* Polylines for tracked events */}
-        {Object.keys(trackedEventPositions).map((eventId) => {
+        {/* Polylines for tracked events - ONLY render when NOT in group mode AND routes are visible */}
+        {!activeGroup && showRoutes && Object.keys(trackedEventPositions).map((eventId) => {
           const positions = trackedEventPositions[eventId];
 
-          console.log(`[RENDER] Event ${eventId}: ${positions?.length || 0} positions in state`);
-
           if (!positions || positions.length < 2) {
-            console.log(`[RENDER] Skipping polyline for event ${eventId} - insufficient positions (need at least 2, have ${positions?.length || 0})`);
             return null;
           }
-
-          console.log(`[RENDER] Rendering polyline for event ${eventId} with ${positions.length} positions`);
 
           return (
             <Polyline
               key={`route-${eventId}`}
               coordinates={positions}
-              strokeColor="#FF3B30"
+              strokeColor={theme.primary.main}
               strokeWidth={4}
               geodesic={true}
               lineCap="round"
               lineJoin="round"
-              strokeColors={['#FF3B30']}
             />
           );
         })}
       </MapView>
 
-      {devicesWithPosition.length === 0 && (
-        <View style={styles.emptyOverlay}>
-          <Text style={styles.emptyText}>
+      {devicesWithPosition.length === 0 && !userLocation && (
+        <View style={[styles.emptyOverlay, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border }]}>
+          <Text style={[styles.emptyText, { color: theme.text.secondary }]}>
             No hay dispositivos con posición disponible
           </Text>
         </View>
       )}
 
-      <SlidingEventFeed
-        events={events}
-        onEventPress={(eventId) => navigation.navigate('EventDetail', { eventId })}
-        onRefresh={handleRefresh}
-        refreshing={refreshing}
-        onFilterPress={() => setShowFilterModal(true)}
-        onCommentPress={(eventId) => navigation.navigate('EventDetail', { eventId })}
-      />
+      {/* Route Toggle Button */}
+      {!activeGroup && Object.keys(trackedEventPositions).some((eventId) =>
+        trackedEventPositions[eventId] && trackedEventPositions[eventId].length >= 2
+      ) && (
+        <TouchableOpacity
+          style={[
+            styles.routeToggleButton,
+            {
+              backgroundColor: theme.bg.primary,
+              bottom: (isPeekMode || activeGroup) ? 100 : 20,
+            },
+            !showRoutes && { backgroundColor: theme.bg.secondary },
+          ]}
+          onPress={() => setShowRoutes((prev: boolean) => !prev)}
+        >
+          <Ionicons
+            name={showRoutes ? 'analytics' : 'analytics-outline'}
+            size={22}
+            color={showRoutes ? theme.primary.main : theme.text.tertiary}
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* Center on User Location Button */}
+      {userLocation && (
+        <TouchableOpacity
+          style={[
+            styles.centerLocationButton,
+            {
+              backgroundColor: theme.bg.primary,
+              bottom: (isPeekMode || activeGroup) ? 100 : 20,
+            }
+          ]}
+          onPress={centerOnUserLocation}
+        >
+          <Ionicons name="locate" size={22} color={theme.primary.main} />
+        </TouchableOpacity>
+      )}
+
+      {/* Peek Mode Banner */}
+      {!activeGroup && (
+        <View style={[styles.peekBannerContainer, { bottom: isPeekMode ? 98 : 30 }]}>
+          <PeekModeBanner
+            isPeeking={isPeekMode}
+            onPress={handlePeekModeToggle}
+          />
+        </View>
+      )}
+
+      {/* Only show feed when in peek mode or group mode */}
+      {(isPeekMode || activeGroup) && (
+        <SlidingEventFeed
+          events={displayEvents}
+          onEventPress={(eventId) => navigation.navigate('EventDetail', { eventId })}
+          onRefresh={activeGroup ? loadGroupData : handleRefresh}
+          refreshing={refreshing}
+          onFilterPress={() => setShowFilterModal(true)}
+          onCommentPress={(eventId) => navigation.navigate('EventDetail', { eventId })}
+          isGroupMode={!!activeGroup}
+          groupName={activeGroup?.name}
+          startMinimized={feedMinimized}
+        />
+      )}
 
       <EventFilterModal
         visible={showFilterModal}
@@ -536,13 +515,44 @@ export function MapScreen({ navigation, route }: any) {
         initialFilters={filters}
       />
 
-      {/* Hamburger Menu Button */}
-      <TouchableOpacity
-        style={styles.menuButton}
-        onPress={() => setShowMenu(true)}
-      >
-        <Ionicons name="menu" size={28} color="#262626" />
-      </TouchableOpacity>
+      {/* Header Bar - Instagram-style compact */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 4, backgroundColor: theme.bg.primary }]}>
+        {/* Left side: Logo or Group Chip */}
+        {!activeGroup ? (
+          <PeekLogo
+            size="small"
+            showBubble={false}
+            isPeeking={isPeekMode}
+            onPress={handlePeekModeToggle}
+          />
+        ) : (
+          <GroupModeChip
+            group={activeGroup}
+            onClose={clearActiveGroup}
+            onPress={() => setShowGroupMembersModal(true)}
+            memberCount={new Set(groupPositions.map((p: any) => p.memberId)).size}
+          />
+        )}
+
+        {/* Right side: Animated Menu Button */}
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={() => setShowMenu(true)}
+        >
+          <AnimatedMenuIcon isOpen={showMenu} color={theme.text.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Group Members Modal */}
+      {activeGroup && (
+        <GroupMembersModal
+          visible={showGroupMembersModal}
+          onClose={() => setShowGroupMembersModal(false)}
+          positions={groupPositions}
+          onSelectMember={handleSelectMember}
+          groupName={activeGroup.name}
+        />
+      )}
 
       {/* Menu Modal - Instagram Style Bottom Sheet */}
       <Modal
@@ -552,13 +562,38 @@ export function MapScreen({ navigation, route }: any) {
         onRequestClose={() => setShowMenu(false)}
       >
         <TouchableOpacity
-          style={styles.menuOverlay}
+          style={[styles.menuOverlay, { backgroundColor: theme.overlay.medium }]}
           activeOpacity={1}
           onPress={() => setShowMenu(false)}
         >
-          <View style={styles.menuBottomSheet}>
+          <View style={[styles.menuBottomSheet, { backgroundColor: theme.bg.primary }]}>
             {/* Handle Bar */}
-            <View style={styles.sheetHandle} />
+            <View style={[styles.sheetHandle, { backgroundColor: theme.glass.borderStrong }]} />
+
+            {/* User Profile Header - Instagram Style */}
+            {userProfile && (
+              <TouchableOpacity
+                style={styles.profileHeader}
+                onPress={() => {
+                  setShowMenu(false);
+                  navigation.navigate('Settings');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.profileAvatar, { backgroundColor: theme.primary.main }]}>
+                  <Text style={styles.profileAvatarText}>
+                    {userProfile.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.profileInfo}>
+                  <Text style={[styles.profileName, { color: theme.text.primary }]}>{userProfile.name}</Text>
+                  <Text style={[styles.profileEmail, { color: theme.text.tertiary }]}>{userProfile.email}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              </TouchableOpacity>
+            )}
+
+            <View style={[styles.menuDivider, { backgroundColor: theme.glass.border }]} />
 
             <View style={styles.menuItems}>
               <TouchableOpacity
@@ -568,15 +603,15 @@ export function MapScreen({ navigation, route }: any) {
                   navigation.navigate('AreasList');
                 }}
               >
-                <Ionicons name="location-outline" size={26} color="#262626" />
-                <Text style={styles.menuItemText}>Mis Áreas de Interés</Text>
+                <Ionicons name="location-outline" size={26} color={theme.text.primary} />
+                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Mis Areas de Interes</Text>
                 <View style={styles.menuItemRight}>
                   {totalPendingRequests > 0 && (
-                    <View style={styles.menuBadge}>
+                    <View style={[styles.menuBadge, { backgroundColor: theme.error.main }]}>
                       <Text style={styles.menuBadgeText}>{totalPendingRequests}</Text>
                     </View>
                   )}
-                  <Ionicons name="chevron-forward" size={20} color="#c7c7cc" />
+                  <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
                 </View>
               </TouchableOpacity>
 
@@ -584,24 +619,17 @@ export function MapScreen({ navigation, route }: any) {
                 style={styles.menuItem}
                 onPress={() => {
                   setShowMenu(false);
-                  navigation.navigate('AreasSearch');
+                  navigation.navigate('AreasSearch', {
+                    mapLocation: mapRegion ? {
+                      latitude: mapRegion.latitude,
+                      longitude: mapRegion.longitude,
+                    } : undefined,
+                  });
                 }}
               >
-                <Ionicons name="search-outline" size={26} color="#262626" />
-                <Text style={styles.menuItemText}>Buscar Áreas</Text>
-                <Ionicons name="chevron-forward" size={20} color="#c7c7cc" style={styles.menuChevron} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  navigation.navigate('Main', { screen: 'Settings' });
-                }}
-              >
-                <Ionicons name="person-outline" size={26} color="#262626" />
-                <Text style={styles.menuItemText}>Mi Perfil</Text>
-                <Ionicons name="chevron-forward" size={20} color="#c7c7cc" style={styles.menuChevron} />
+                <Ionicons name="search-outline" size={26} color={theme.text.primary} />
+                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Buscar Areas</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -611,17 +639,43 @@ export function MapScreen({ navigation, route }: any) {
                   navigation.navigate('NotificationsList');
                 }}
               >
-                <Ionicons name="notifications-outline" size={26} color="#262626" />
-                <Text style={styles.menuItemText}>Notificaciones</Text>
-                <Ionicons name="chevron-forward" size={20} color="#c7c7cc" style={styles.menuChevron} />
+                <Ionicons name="notifications-outline" size={26} color={theme.text.primary} />
+                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Notificaciones</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+              </TouchableOpacity>
+
+              <View style={[styles.menuDivider, { backgroundColor: theme.glass.border }]} />
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  navigation.navigate('Devices', { screen: 'DevicesList' });
+                }}
+              >
+                <Ionicons name="hardware-chip-outline" size={26} color={theme.text.primary} />
+                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Mis Dispositivos</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  navigation.navigate('Devices', { screen: 'AddDevice' });
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={26} color={theme.primary.main} />
+                <Text style={[styles.menuItemText, { color: theme.primary.main }]}>Agregar Dispositivo</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               {/* Cancel Button */}
               <TouchableOpacity
-                style={styles.menuCancelButton}
+                style={[styles.menuCancelButton, { borderTopColor: theme.glass.border }]}
                 onPress={() => setShowMenu(false)}
               >
-                <Text style={styles.menuCancelText}>Cancelar</Text>
+                <Text style={[styles.menuCancelText, { color: theme.primary.main }]}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -640,27 +694,41 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   callout: {
-    padding: 8,
-    minWidth: 200,
+    padding: 12,
+    minWidth: 220,
+    maxWidth: 280,
+  },
+  calloutTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
   },
   calloutTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
+    fontSize: 15,
+    fontWeight: '600',
+    color: staticColors.neutral[900],
+    letterSpacing: -0.2,
   },
   calloutText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
+    fontSize: 13,
+    color: staticColors.neutral[500],
+    marginTop: 3,
+    lineHeight: 18,
+  },
+  calloutHint: {
+    color: staticColors.primary.main,
+    fontWeight: '600',
+    marginTop: 6,
   },
   emptyOverlay: {
     position: 'absolute',
     top: 20,
     left: 20,
     right: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -669,7 +737,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: '#666',
     textAlign: 'center',
   },
   urgentTitle: {
@@ -688,21 +755,57 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
-  menuButton: {
+  headerBar: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#fff',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    zIndex: 1000,
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeToggleButton: {
+    position: 'absolute',
+    right: 72,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 10,
+  },
+  routeToggleButtonDisabled: {
+    backgroundColor: '#f0f0f0',
+  },
+  centerLocationButton: {
+    position: 'absolute',
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 10,
   },
   menuOverlay: {
     flex: 1,
@@ -724,6 +827,44 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 8,
     marginBottom: 8,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  profileAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarText: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: 2,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#E5E5E5',
+    marginHorizontal: 20,
   },
   menuItems: {
     paddingTop: 8,
@@ -775,5 +916,97 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '600',
+  },
+  peekBannerContainer: {
+    position: 'absolute',
+    left: 16,
+    bottom: 110,
+    zIndex: 10,
+  },
+  groupMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  groupMarkerInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupMarkerText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#007AFF',
+  },
+  selectedGroupMarker: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  selectedGroupMarkerInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  selectedGroupMarkerText: {
+    fontSize: 16,
+    color: '#FF3B30',
+  },
+  userLocationMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  userLocationMarkerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  // Device marker styles
+  deviceMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  deviceMarkerInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deviceMarkerText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

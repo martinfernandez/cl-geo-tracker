@@ -30,14 +30,23 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Import authService lazily to avoid circular dependency
+let authServiceModule: any = null;
+const getAuthService = async () => {
+  if (!authServiceModule) {
+    authServiceModule = (await import('./authService')).default;
+  }
+  return authServiceModule;
+};
+
 // Auto-logout on 401 (invalid/expired token)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      console.log('[API] 401 Unauthorized - clearing session');
-      await AsyncStorage.multiRemove(['auth_token', 'user_id', 'user_data']);
-      // The AuthContext will detect this and redirect to login
+      console.log('[API] 401 Unauthorized - forcing logout');
+      const authService = await getAuthService();
+      await authService.forceLogout();
     }
     return Promise.reject(error);
   }
@@ -292,11 +301,13 @@ export const commentApi = {
 
 export interface Notification {
   id: string;
-  type: 'EVENT_REACTION' | 'EVENT_COMMENT' | 'COMMENT_REPLY';
+  type: 'EVENT_REACTION' | 'EVENT_COMMENT' | 'COMMENT_REPLY' | 'AREA_JOIN_REQUEST' | 'AREA_JOIN_ACCEPTED' | 'AREA_INVITATION' | 'FOUND_OBJECT' | 'FOUND_OBJECT_MESSAGE';
   senderId?: string;
   receiverId: string;
   eventId?: string;
   commentId?: string;
+  areaId?: string;
+  chatId?: string;
   content: string;
   isRead: boolean;
   createdAt: string;

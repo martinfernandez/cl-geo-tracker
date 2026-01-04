@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -16,33 +17,49 @@ interface Props {
   initialArea?: { latitude: number; longitude: number; radius: number };
 }
 
+const DEFAULT_CENTER = { latitude: -34.6037, longitude: -58.3816 };
+
 export default function AreaOfInterestPicker({
   visible,
   onClose,
   onSave,
   initialArea,
 }: Props) {
-  const [center, setCenter] = useState<{
-    latitude: number;
-    longitude: number;
-  }>(
-    initialArea
-      ? { latitude: initialArea.latitude, longitude: initialArea.longitude }
-      : { latitude: -34.6037, longitude: -58.3816 } // Buenos Aires default
-  );
-  const [radius, setRadius] = useState(initialArea?.radius || 5000); // 5km default
+  const { isDark } = useTheme();
+  const [center, setCenter] = useState<{ latitude: number; longitude: number }>(DEFAULT_CENTER);
+  const [radius, setRadius] = useState(5000);
+  const [region, setRegion] = useState<Region | null>(null);
 
-  const defaultRegion: Region = {
-    latitude: center.latitude,
-    longitude: center.longitude,
-    latitudeDelta: 0.2,
-    longitudeDelta: 0.2,
-  };
+  // Reset state when modal opens
+  useEffect(() => {
+    if (visible) {
+      const targetCenter = initialArea
+        ? { latitude: initialArea.latitude, longitude: initialArea.longitude }
+        : DEFAULT_CENTER;
+      const targetRadius = initialArea?.radius || 5000;
+      const delta = Math.max((targetRadius / 111000) * 3, 0.01);
+
+      setCenter(targetCenter);
+      setRadius(targetRadius);
+      setRegion({
+        latitude: targetCenter.latitude,
+        longitude: targetCenter.longitude,
+        latitudeDelta: delta,
+        longitudeDelta: delta,
+      });
+    } else {
+      setRegion(null);
+    }
+  }, [visible, initialArea]);
 
   const handleMapPress = (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setCenter({ latitude, longitude });
   };
+
+  const handleRegionChangeComplete = useCallback((newRegion: Region) => {
+    setRegion(newRegion);
+  }, []);
 
   const handleSave = () => {
     onSave({
@@ -52,6 +69,8 @@ export default function AreaOfInterestPicker({
     });
     onClose();
   };
+
+  if (!visible || !region) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -65,8 +84,10 @@ export default function AreaOfInterestPicker({
 
         <MapView
           style={styles.map}
-          initialRegion={defaultRegion}
+          initialRegion={region}
+          onRegionChangeComplete={handleRegionChangeComplete}
           onPress={handleMapPress}
+          userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
           <Marker coordinate={center} title="Centro del área" />
           <Circle

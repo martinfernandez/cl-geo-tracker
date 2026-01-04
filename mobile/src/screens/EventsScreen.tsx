@@ -12,6 +12,7 @@ import {
   Alert,
   Animated,
   Easing,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -154,6 +155,9 @@ export default function EventsScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active' | 'closed'>('all');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<EventWithCounts | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadEvents();
@@ -240,6 +244,34 @@ export default function EventsScreen({ navigation, route }: Props) {
     navigation.navigate('EventDetail', { eventId, openComments: true });
   };
 
+  const handleDeleteEvent = (event: EventWithCounts) => {
+    setEventToDelete(event);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteEvent = async () => {
+    if (!eventToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await eventApi.delete(eventToDelete.id);
+      setEvents(prev => prev.filter(e => e.id !== eventToDelete.id));
+      showSuccess('Evento eliminado');
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      showError('No se pudo eliminar el evento');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+      setEventToDelete(null);
+    }
+  };
+
+  const cancelDeleteEvent = () => {
+    setShowDeleteConfirm(false);
+    setEventToDelete(null);
+  };
+
   const filteredEvents = events.filter(event => {
     if (filter === 'active') return event.status === 'IN_PROGRESS';
     if (filter === 'closed') return event.status === 'CLOSED';
@@ -263,7 +295,7 @@ export default function EventsScreen({ navigation, route }: Props) {
           {item.imageUrl && (
             <View style={styles.imageContainer}>
               <Image
-                source={{ uri: `${BASE_URL}${item.imageUrl}` }}
+                source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
                 style={styles.eventImage}
               />
               {/* Time badge on image */}
@@ -356,6 +388,13 @@ export default function EventsScreen({ navigation, route }: Props) {
 
           {/* Actions specific to owner */}
           <View style={styles.interactionRight}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.error.subtle }]}
+              onPress={() => handleDeleteEvent(item)}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.error.main} />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: theme.glass.bg }]}
               onPress={() => navigation.navigate('EditEvent', { eventId: item.id })}
@@ -478,6 +517,62 @@ export default function EventsScreen({ navigation, route }: Props) {
           </View>
         }
       />
+
+      {/* Custom Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelDeleteEvent}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={cancelDeleteEvent}
+        >
+          <View style={[styles.modalContent, { backgroundColor: theme.bg.primary }]}>
+            <View style={styles.modalIconContainer}>
+              <View style={[styles.modalIconCircle, { backgroundColor: colors.error.subtle }]}>
+                <Ionicons name="trash-outline" size={32} color={colors.error.main} />
+              </View>
+            </View>
+
+            <Text style={[styles.modalTitle, { color: theme.text.primary }]}>
+              Eliminar evento
+            </Text>
+
+            <Text style={[styles.modalMessage, { color: theme.text.secondary }]}>
+              {eventToDelete ? (
+                `¿Estas seguro de que queres eliminar este evento?\n\n"${eventToDelete.description.slice(0, 50)}${eventToDelete.description.length > 50 ? '...' : ''}"`
+              ) : ''}
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: theme.glass.bg }]}
+                onPress={cancelDeleteEvent}
+                disabled={isDeleting}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text.secondary }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonDelete, { backgroundColor: colors.error.main }]}
+                onPress={confirmDeleteEvent}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <Text style={styles.modalButtonTextDelete}>Eliminando...</Text>
+                ) : (
+                  <Text style={styles.modalButtonTextDelete}>Eliminar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -704,5 +799,67 @@ const styles = StyleSheet.create({
   emptyHintText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: radius.xl,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalIconContainer: {
+    marginBottom: 16,
+  },
+  modalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancel: {
+    borderWidth: 1,
+  },
+  modalButtonDelete: {
+    // Background set dynamically with theme
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalButtonTextDelete: {
+    color: '#FFFFFF',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, G, Rect, Defs, Pattern } from 'react-native-svg';
 import { Event, reactionApi } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
@@ -23,7 +24,6 @@ import { colors as staticColors, radius } from '../theme/colors';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MINIMIZED_HEIGHT = 90; // Shows the header with title visible
 const COLLAPSED_HEIGHT = SCREEN_HEIGHT * 0.2;
-const EXPANDED_HEIGHT = SCREEN_HEIGHT * 0.8;
 const DRAG_THRESHOLD = 50;
 
 interface EventWithCounts extends Event {
@@ -120,135 +120,143 @@ const urgentDotStyles = StyleSheet.create({
   },
 });
 
-// Animated empty state illustration component
+// Animated empty state illustration component - matches onboarding style
 const AnimatedEmptyIllustration = ({ isGroupMode }: { isGroupMode: boolean }) => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const pulseOuter = useRef(new Animated.Value(1)).current;
+  const pulseMid = useRef(new Animated.Value(1)).current;
+
+  const iconColor = isGroupMode ? '#007AFF' : '#34C759';
 
   useEffect(() => {
-    // Pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Float animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: -8,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Subtle rotation for radar effect
-    Animated.loop(
-      Animated.timing(rotateAnim, {
+    // Entrance animation
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
         toValue: 1,
-        duration: 4000,
-        easing: Easing.linear,
+        tension: 50,
+        friction: 6,
         useNativeDriver: true,
-      })
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Subtle pulse on outer ring
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseOuter, {
+          toValue: 1.05,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseOuter, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Offset pulse on middle ring
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseMid, {
+          toValue: 1.08,
+          duration: 1800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseMid, {
+          toValue: 1,
+          duration: 1800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
     ).start();
   }, []);
 
-  const rotation = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
   return (
-    <View style={emptyStyles.illustrationContainer}>
+    <Animated.View
+      style={[
+        emptyStyles.illustrationContainer,
+        {
+          opacity: opacityAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      {/* Outer circle */}
       <Animated.View
         style={[
-          emptyStyles.illustrationWrapper,
+          emptyStyles.circleOuter,
           {
-            transform: [
-              { scale: pulseAnim },
-              { translateY: floatAnim },
-            ],
+            backgroundColor: `${iconColor}10`,
+            transform: [{ scale: pulseOuter }],
           },
         ]}
       >
-        <Svg width={120} height={120} viewBox="0 0 120 120">
-          {/* Background circle */}
-          <Circle cx="60" cy="60" r="55" fill="#F0F4FF" />
-
-          {/* Radar circles */}
-          <Circle cx="60" cy="60" r="45" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
-          <Circle cx="60" cy="60" r="35" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
-          <Circle cx="60" cy="60" r="25" fill="none" stroke="#E0E7FF" strokeWidth="1" />
-
-          {/* Center pin/marker */}
-          <G>
-            <Path
-              d="M60 30 C45 30 35 42 35 55 C35 75 60 90 60 90 C60 90 85 75 85 55 C85 42 75 30 60 30 Z"
-              fill={isGroupMode ? "#007AFF" : "#FF9500"}
+        {/* Middle circle */}
+        <Animated.View
+          style={[
+            emptyStyles.circleMiddle,
+            {
+              backgroundColor: `${iconColor}18`,
+              transform: [{ scale: pulseMid }],
+            },
+          ]}
+        >
+          {/* Inner circle with icon */}
+          <View
+            style={[
+              emptyStyles.circleInner,
+              { backgroundColor: `${iconColor}25` },
+            ]}
+          >
+            <Ionicons
+              name={isGroupMode ? 'people-outline' : 'checkmark-circle-outline'}
+              size={44}
+              color={iconColor}
             />
-            <Circle cx="60" cy="52" r="10" fill="#fff" />
-          </G>
-        </Svg>
+          </View>
+        </Animated.View>
       </Animated.View>
-
-      {/* Animated radar sweep */}
-      <Animated.View
-        style={[
-          emptyStyles.radarSweep,
-          {
-            transform: [{ rotate: rotation }],
-          },
-        ]}
-      >
-        <View style={emptyStyles.radarLine} />
-      </Animated.View>
-    </View>
+    </Animated.View>
   );
 };
 
 const emptyStyles = StyleSheet.create({
   illustrationContainer: {
-    width: 120,
-    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
   },
-  illustrationWrapper: {
-    position: 'absolute',
-  },
-  radarSweep: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
+  circleOuter: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  radarLine: {
-    width: 2,
-    height: 55,
-    backgroundColor: 'rgba(0, 122, 255, 0.3)',
-    borderRadius: 1,
+  circleMiddle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  circleInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
@@ -462,6 +470,16 @@ export default function SlidingEventFeed({
   startMinimized = false,
 }: Props) {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  // Calculate header safe area dynamically based on device safe area insets
+  // Header height = insets.top + padding (4) + content (~44) + padding (8) + extra margin
+  // Use Math.max to ensure minimum safe area even if insets aren't loaded yet
+  const HEADER_SAFE_AREA = Math.max(insets.top + 80, 140);
+  // Leave 10% of the map visible when expanded (90% of available space)
+  const MAP_VISIBLE_PERCENT = 0.10;
+  const EXPANDED_HEIGHT = (SCREEN_HEIGHT - HEADER_SAFE_AREA) * (1 - MAP_VISIBLE_PERCENT);
+
   // State: 'minimized' | 'collapsed' | 'expanded'
   const [feedState, setFeedState] = useState<'minimized' | 'collapsed' | 'expanded'>(
     startMinimized ? 'minimized' : 'collapsed'
@@ -469,6 +487,12 @@ export default function SlidingEventFeed({
   const [localEvents, setLocalEvents] = useState<EventWithCounts[]>(events);
   const initialHeight = startMinimized ? MINIMIZED_HEIGHT : COLLAPSED_HEIGHT;
   const height = useRef(new Animated.Value(initialHeight)).current;
+
+  // Keep refs updated for pan responder (closures don't update)
+  const expandedHeightRef = useRef(EXPANDED_HEIGHT);
+  expandedHeightRef.current = EXPANDED_HEIGHT;
+  const feedStateRef = useRef(feedState);
+  feedStateRef.current = feedState;
 
   // Update height when startMinimized changes
   useEffect(() => {
@@ -487,12 +511,12 @@ export default function SlidingEventFeed({
     setLocalEvents(sortEvents(events));
   }, [events]);
 
-  // Get current height based on state
+  // Get current height based on state - uses ref for expanded height
   const getCurrentHeight = () => {
     switch (feedState) {
       case 'minimized': return MINIMIZED_HEIGHT;
       case 'collapsed': return COLLAPSED_HEIGHT;
-      case 'expanded': return EXPANDED_HEIGHT;
+      case 'expanded': return expandedHeightRef.current;
     }
   };
 
@@ -503,34 +527,40 @@ export default function SlidingEventFeed({
         return Math.abs(gestureState.dy) > 5;
       },
       onPanResponderMove: (_, gestureState) => {
-        const currentHeight = getCurrentHeight();
-        const newHeight = currentHeight - gestureState.dy;
+        const currentState = feedStateRef.current;
+        const baseHeight = currentState === 'minimized' ? MINIMIZED_HEIGHT :
+                           currentState === 'collapsed' ? COLLAPSED_HEIGHT :
+                           expandedHeightRef.current;
+        const newHeight = baseHeight - gestureState.dy;
         // Limit movement between minimized and expanded heights
-        if (newHeight >= MINIMIZED_HEIGHT && newHeight <= EXPANDED_HEIGHT) {
+        if (newHeight >= MINIMIZED_HEIGHT && newHeight <= expandedHeightRef.current) {
           height.setValue(newHeight);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        const currentHeight = getCurrentHeight();
+        const currentState = feedStateRef.current;
+        const currentHeight = currentState === 'minimized' ? MINIMIZED_HEIGHT :
+                              currentState === 'collapsed' ? COLLAPSED_HEIGHT :
+                              expandedHeightRef.current;
 
         if (gestureState.dy < -DRAG_THRESHOLD) {
           // Swiping up
-          if (feedState === 'minimized') {
+          if (currentState === 'minimized') {
             setToCollapsed();
-          } else if (feedState === 'collapsed') {
+          } else if (currentState === 'collapsed') {
             setToExpanded();
           } else {
             // Already expanded, spring back
             Animated.spring(height, {
-              toValue: EXPANDED_HEIGHT,
+              toValue: expandedHeightRef.current,
               useNativeDriver: false,
             }).start();
           }
         } else if (gestureState.dy > DRAG_THRESHOLD) {
           // Swiping down
-          if (feedState === 'expanded') {
+          if (currentState === 'expanded') {
             setToCollapsed();
-          } else if (feedState === 'collapsed') {
+          } else if (currentState === 'collapsed') {
             setToMinimized();
           } else {
             // Already minimized, spring back
@@ -573,7 +603,7 @@ export default function SlidingEventFeed({
   const setToExpanded = () => {
     setFeedState('expanded');
     Animated.spring(height, {
-      toValue: EXPANDED_HEIGHT,
+      toValue: expandedHeightRef.current,
       useNativeDriver: false,
       tension: 50,
       friction: 8,
@@ -639,7 +669,7 @@ export default function SlidingEventFeed({
         {item.imageUrl && (
           <View style={styles.imageContainer}>
             <Image
-              source={{ uri: `${BASE_URL}${item.imageUrl}` }}
+              source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
               style={styles.eventImage}
             />
             {/* Gradient overlay for better text readability */}
@@ -678,7 +708,10 @@ export default function SlidingEventFeed({
                   {item.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
                 </Text>
               </View>
-              {(item as any).isUrgent && <UrgentPulsingDot color={theme.error.main} />}
+              {(item as any).isUrgent && item.status !== 'CLOSED' && <UrgentPulsingDot color={theme.error.main} />}
+              {item.status === 'CLOSED' && (
+                <View style={styles.closedStaticDot} />
+              )}
             </View>
             {/* Time on the right if no image */}
             {!item.imageUrl && (
@@ -1041,5 +1074,11 @@ const styles = StyleSheet.create({
   },
   urgentCard: {
     // Styles applied dynamically
+  },
+  closedStaticDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: staticColors.error.main,
   },
 });

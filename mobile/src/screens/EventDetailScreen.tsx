@@ -12,13 +12,17 @@ import {
   Platform,
   Modal,
   Pressable,
+  Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { eventApi, reactionApi, commentApi, Comment, api } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
 import { BASE_URL } from '../config/environment';
 
 type Props = {
@@ -27,22 +31,74 @@ type Props = {
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
+  GENERAL: 'General',
   THEFT: 'Robo',
-  LOST: 'Extravío',
+  LOST: 'Extravio',
   ACCIDENT: 'Accidente',
   FIRE: 'Incendio',
 };
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
+  GENERAL: '#007AFF',
   THEFT: '#FF3B30',
   LOST: '#FF9500',
   ACCIDENT: '#FFCC00',
   FIRE: '#FF2D55',
 };
 
+const EVENT_TYPE_ICONS: Record<string, string> = {
+  GENERAL: 'megaphone-outline',
+  THEFT: 'warning-outline',
+  LOST: 'search-outline',
+  ACCIDENT: 'car-outline',
+  FIRE: 'flame-outline',
+};
+
+// Format relative time like Instagram/social feeds
+const formatRelativeTime = (dateString: string): string => {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) {
+    return 'hace un momento';
+  }
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) {
+    return diffInMinutes === 1 ? 'hace 1 min' : `hace ${diffInMinutes} min`;
+  }
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return diffInHours === 1 ? 'hace 1 hora' : `hace ${diffInHours} horas`;
+  }
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) {
+    return diffInDays === 1 ? 'hace 1 dia' : `hace ${diffInDays} dias`;
+  }
+
+  const diffInWeeks = Math.floor(diffInDays / 7);
+  if (diffInWeeks < 4) {
+    return diffInWeeks === 1 ? 'hace 1 semana' : `hace ${diffInWeeks} semanas`;
+  }
+
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) {
+    return diffInMonths === 1 ? 'hace 1 mes' : `hace ${diffInMonths} meses`;
+  }
+
+  const diffInYears = Math.floor(diffInDays / 365);
+  return diffInYears === 1 ? 'hace 1 ano' : `hace ${diffInYears} anos`;
+};
+
 export default function EventDetailScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
   const { showSuccess, showError } = useToast();
+  const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [event, setEvent] = useState<any>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +109,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     Array<{ latitude: number; longitude: number }>
   >([]);
   const [showActionSheet, setShowActionSheet] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [eventConversations, setEventConversations] = useState<any[]>([]);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
@@ -62,7 +119,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const commentInputRef = useRef<TextInput>(null);
 
   const handleScrollToComments = () => {
-    // Scroll to bottom and focus the comment input
     scrollViewRef.current?.scrollToEnd({ animated: true });
     setTimeout(() => {
       commentInputRef.current?.focus();
@@ -74,6 +130,22 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     loadCurrentUser();
   }, [eventId]);
 
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   const loadCurrentUser = async () => {
     try {
       const response = await api.get('/users/profile');
@@ -83,7 +155,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  // Load conversations for event owner
   const loadEventConversations = async () => {
     if (!event || !currentUserId || event.userId !== currentUserId) return;
 
@@ -97,7 +168,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  // Load conversations when event and currentUserId are available
   useEffect(() => {
     if (event && currentUserId && event.userId === currentUserId && event.isUrgent) {
       loadEventConversations();
@@ -107,7 +177,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (event?.realTimeTracking && event?.status === 'IN_PROGRESS') {
       loadTrackedPositions();
-      // Poll every 30 seconds while event is active
       const interval = setInterval(loadTrackedPositions, 30000);
       return () => clearInterval(interval);
     }
@@ -155,7 +224,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       }));
     } catch (error) {
       console.error('Error toggling reaction:', error);
-      showError('No se pudo actualizar la reacción');
+      showError('No se pudo actualizar la reaccion');
     }
   };
 
@@ -179,7 +248,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
   const handleOpenEventInbox = () => {
     if (eventConversations.length === 1) {
-      // If only one conversation, go directly to chat
       const conv = eventConversations[0];
       navigation.navigate('Chat' as never, {
         conversationId: conv.id,
@@ -187,7 +255,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         otherUserId: conv.otherUser?.id,
       } as never);
     } else {
-      // If multiple conversations, go to inbox filtered by event
       navigation.navigate('Inbox' as never, { eventId: event.id } as never);
     }
   };
@@ -197,13 +264,14 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
     try {
       setSubmitting(true);
-      await commentApi.createComment(eventId, {
+      const newComment = await commentApi.createComment(eventId, {
         content: commentText.trim(),
         parentCommentId: replyingTo || undefined,
       });
+
+      setComments((prevComments) => [...prevComments, newComment]);
       setCommentText('');
       setReplyingTo(null);
-      await loadEventDetails();
     } catch (error) {
       console.error('Error submitting comment:', error);
       showError('No se pudo enviar el comentario');
@@ -230,11 +298,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const handleCommentLike = async (commentId: string) => {
     try {
       const result = await commentApi.toggleCommentLike(commentId);
-      // Update local state to reflect the like change
       setComments((prevComments) =>
         prevComments.map((comment) => {
           if (comment.id === commentId) {
-            const userLike = comment.likes?.find((like) => like.userId === currentUserId);
             return {
               ...comment,
               likes: result.liked
@@ -242,13 +308,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 : comment.likes?.filter((like) => like.userId !== currentUserId) || [],
             };
           }
-          // Handle likes in replies
           if (comment.replies) {
             return {
               ...comment,
               replies: comment.replies.map((reply) => {
                 if (reply.id === commentId) {
-                  const userLike = reply.likes?.find((like) => like.userId === currentUserId);
                   return {
                     ...reply,
                     likes: result.liked
@@ -289,6 +353,15 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleViewUserProfile = () => {
+    setShowUserMenu(false);
+    navigation.navigate('UserProfile' as never, { userId: event.user.id } as never);
+  };
+
+  const getUserInitial = (name: string) => {
+    return name ? name.charAt(0).toUpperCase() : '?';
+  };
+
   const renderComment = (comment: Comment, isReply = false) => {
     const likeCount = comment.likes?.length || 0;
     const userLiked = comment.likes?.some((like) => like.userId === currentUserId);
@@ -300,12 +373,18 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         style={[styles.commentContainer, isReply && styles.replyContainer]}
       >
         <View style={styles.commentHeader}>
-          <TouchableOpacity onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}>
+          <TouchableOpacity
+            style={styles.commentUserRow}
+            onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}
+          >
+            <View style={styles.commentAvatar}>
+              <Text style={styles.commentAvatarText}>{getUserInitial(comment.user.name)}</Text>
+            </View>
             <Text style={styles.commentAuthor}>{comment.user.name}</Text>
           </TouchableOpacity>
           <View style={styles.commentHeaderRight}>
             <Text style={styles.commentDate}>
-              {new Date(comment.createdAt).toLocaleDateString()}
+              {formatRelativeTime(comment.createdAt)}
             </Text>
             {isOwnComment && (
               <TouchableOpacity
@@ -373,13 +452,15 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     );
   }
 
+  const isOwner = currentUserId && event?.userId === currentUserId;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={0}
     >
-      {/* Header */}
+      {/* Header - Simple back button */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -387,16 +468,14 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         >
           <Ionicons name="arrow-back" size={24} color="#262626" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Detalle del Evento</Text>
-        {currentUserId && event?.userId === currentUserId ? (
+        <View style={styles.headerSpacer} />
+        {isOwner && (
           <TouchableOpacity
             onPress={() => setShowActionSheet(true)}
             style={styles.headerButton}
           >
             <Ionicons name="ellipsis-horizontal" size={24} color="#262626" />
           </TouchableOpacity>
-        ) : (
-          <View style={styles.headerSpacer} />
         )}
       </View>
 
@@ -406,7 +485,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Map */}
+        {/* Map - Full width, first */}
         <View style={styles.mapContainer}>
           <MapView
             style={styles.map}
@@ -416,18 +495,19 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               latitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
               longitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
             }}
+            userInterfaceStyle={isDark ? 'dark' : 'light'}
           >
-            {/* Event start marker */}
             <Marker
               coordinate={{
                 latitude: event.latitude,
                 longitude: event.longitude,
               }}
-              pinColor={EVENT_TYPE_COLORS[event.type]}
-              title="Inicio del evento"
-            />
+            >
+              <View style={[styles.mapMarker, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
+                <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={16} color="#fff" />
+              </View>
+            </Marker>
 
-            {/* Tracked route polyline */}
             {event.realTimeTracking && trackedPositions.length > 1 && (
               <Polyline
                 coordinates={trackedPositions}
@@ -439,17 +519,15 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               />
             )}
 
-            {/* Current position marker (last position) */}
             {event.realTimeTracking && trackedPositions.length > 0 && (
               <Marker
                 coordinate={trackedPositions[trackedPositions.length - 1]}
                 pinColor="#007AFF"
-                title="Posición actual"
+                title="Posicion actual"
               />
             )}
           </MapView>
 
-          {/* Real-time tracking indicator */}
           {event.realTimeTracking && (
             <View
               style={[
@@ -466,111 +544,99 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               />
               <Text style={styles.trackingIndicatorText}>
                 {event.status === 'IN_PROGRESS'
-                  ? `Rastreo activo • ${trackedPositions.length} posiciones`
-                  : `Rastreo finalizado • ${trackedPositions.length} posiciones`}
+                  ? `Rastreo activo`
+                  : `Rastreo finalizado`}
               </Text>
             </View>
           )}
         </View>
 
-        {/* Event Info */}
-        <View style={styles.infoContainer}>
-          <View style={styles.badges}>
-            <View
-              style={[
-                styles.typeBadge,
-                { backgroundColor: EVENT_TYPE_COLORS[event.type] },
-              ]}
-            >
-              <Text style={styles.badgeText}>
-                {EVENT_TYPE_LABELS[event.type]}
-              </Text>
+        {/* User Header - Below map */}
+        <View style={styles.userHeader}>
+          <TouchableOpacity
+            style={styles.userInfo}
+            onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
+          >
+            <View style={[styles.avatar, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
+              <Text style={styles.avatarText}>{getUserInitial(event.user.name)}</Text>
             </View>
-            <View
-              style={[
-                styles.statusBadge,
-                event.status === 'CLOSED' && styles.statusBadgeClosed,
-              ]}
-            >
-              <Text style={styles.badgeText}>
-                {event.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
-              </Text>
+            <View style={styles.userTextContainer}>
+              <Text style={styles.userName}>{event.user.name}</Text>
+              <View style={styles.userSubtitle}>
+                {event.isUrgent && <UrgentPulsingDot size="small" />}
+                <View style={[styles.typeBadgeSmall, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
+                  <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={10} color="#fff" />
+                  <Text style={styles.typeBadgeSmallText}>{EVENT_TYPE_LABELS[event.type] || 'General'}</Text>
+                </View>
+                {event.status === 'CLOSED' && (
+                  <View style={styles.closedBadge}>
+                    <Text style={styles.closedBadgeText}>Cerrado</Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowUserMenu(true)}
+            style={styles.userMenuButton}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color="#262626" />
+          </TouchableOpacity>
+        </View>
 
-          <Text style={styles.description}>{event.description}</Text>
+        {/* Image - Full width, edge-to-edge */}
+        {event.imageUrl && (
+          <Image
+            source={{ uri: event.imageUrl.startsWith('http') ? event.imageUrl : `${BASE_URL}${event.imageUrl}` }}
+            style={styles.eventImage}
+          />
+        )}
 
-          <View style={styles.metadata}>
-            <View style={styles.metadataRow}>
-              <Text style={styles.metadataText}>Reportado por: </Text>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
-              >
-                <Text style={styles.userName}>{event.user.name}</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.metadataText}>
-              {new Date(event.createdAt).toLocaleString()}
-            </Text>
-            {event.device && (
-              <Text style={styles.metadataText}>
-                Dispositivo: {event.device.name || event.device.imei}
-              </Text>
-            )}
-          </View>
-
-          {/* Image */}
-          {event.imageUrl && (
-            <Image
-              source={{ uri: `${BASE_URL}${event.imageUrl}` }}
-              style={styles.eventImage}
-            />
-          )}
-
-          {/* Interactions */}
-          <View style={styles.interactionBar}>
+        {/* Interaction Bar */}
+        <View style={styles.interactionBar}>
+          <View style={styles.interactionLeft}>
             <TouchableOpacity
               style={styles.interactionButton}
               onPress={handleReaction}
             >
               <Ionicons
                 name={event.userReacted ? 'heart' : 'heart-outline'}
-                size={28}
+                size={26}
                 color={event.userReacted ? '#ed4956' : '#262626'}
               />
-              <Text style={styles.interactionCount}>
-                {event.reactionCount || 0}
-              </Text>
+              {(event.reactionCount || 0) > 0 && (
+                <Text style={[styles.interactionCount, event.userReacted && styles.interactionCountActive]}>
+                  {event.reactionCount}
+                </Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.interactionButton}
               onPress={handleScrollToComments}
             >
-              <Ionicons name="chatbubble-outline" size={28} color="#262626" />
-              <Text style={styles.interactionCount}>
-                {comments.length || 0}
-              </Text>
+              <Ionicons name="chatbubble-outline" size={24} color="#262626" />
+              {comments.length > 0 && (
+                <Text style={styles.interactionCount}>{comments.length}</Text>
+              )}
             </TouchableOpacity>
 
-            {/* Chat button for non-owners of urgent events */}
             {event.isUrgent && event.userId !== currentUserId && (
               <TouchableOpacity
                 style={styles.interactionButton}
                 onPress={handleOpenChat}
               >
-                <Ionicons name="chatbubbles" size={28} color="#007AFF" />
+                <Ionicons name="paper-plane-outline" size={24} color="#262626" />
               </TouchableOpacity>
             )}
 
-            {/* Chat/Inbox button for event owner when they have messages */}
             {event.isUrgent && event.userId === currentUserId && eventConversations.length > 0 && (
               <TouchableOpacity
                 style={styles.interactionButton}
                 onPress={handleOpenEventInbox}
               >
                 <View>
-                  <Ionicons name="chatbubbles" size={28} color="#007AFF" />
+                  <Ionicons name="chatbubbles-outline" size={24} color="#262626" />
                   {unreadMessageCount > 0 && (
                     <View style={styles.unreadBadge}>
                       <Text style={styles.unreadBadgeText}>
@@ -579,34 +645,56 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </View>
                   )}
                 </View>
-                <Text style={styles.interactionCount}>
-                  {eventConversations.length}
-                </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Comments Section */}
-          <View style={styles.commentsSection}>
-            <Text style={styles.sectionTitle}>Comentarios</Text>
-
-            {comments.length === 0 ? (
-              <Text style={styles.noCommentsText}>
-                No hay comentarios aún. ¡Sé el primero en comentar!
-              </Text>
-            ) : (
-              <View style={styles.commentsList}>
-                {comments.map((comment) => renderComment(comment))}
-              </View>
-            )}
+          <View style={styles.timeBadge}>
+            <Ionicons name="time-outline" size={14} color="#666" />
+            <Text style={styles.timeBadgeText}>{formatRelativeTime(event.createdAt)}</Text>
           </View>
-          {/* Extra padding for fixed input */}
-          <View style={{ height: 80 }} />
         </View>
+
+        {/* Description */}
+        <View style={styles.descriptionContainer}>
+          <Text style={styles.description}>
+            <Text style={styles.descriptionUserName}>{event.user.name} </Text>
+            {event.description}
+          </Text>
+        </View>
+
+        {/* Device info if available */}
+        {event.device && (
+          <View style={styles.deviceInfo}>
+            <Ionicons name="hardware-chip-outline" size={14} color="#666" />
+            <Text style={styles.deviceText}>
+              Dispositivo: {event.device.name || event.device.imei}
+            </Text>
+          </View>
+        )}
+
+        {/* Comments Section */}
+        <View style={styles.commentsSection}>
+          <Text style={styles.sectionTitle}>Comentarios</Text>
+
+          {comments.length === 0 ? (
+            <Text style={styles.noCommentsText}>
+              No hay comentarios aun. Se el primero en comentar!
+            </Text>
+          ) : (
+            <View style={styles.commentsList}>
+              {comments.map((comment) => renderComment(comment))}
+            </View>
+          )}
+        </View>
+        <View style={{ height: 80 }} />
       </ScrollView>
 
       {/* Fixed Comment Input at Bottom */}
-      <View style={styles.fixedInputContainer}>
+      <View style={[
+        styles.fixedInputContainer,
+        { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 16) }
+      ]}>
         {replyingTo && (
           <View style={styles.replyingToBar}>
             <Text style={styles.replyingToText}>
@@ -648,7 +736,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      {/* Action Sheet Modal */}
+      {/* Owner Action Sheet Modal */}
       <Modal
         visible={showActionSheet}
         transparent
@@ -680,6 +768,39 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             <TouchableOpacity
               style={[styles.actionSheetButton, styles.actionSheetButtonCancel]}
               onPress={() => setShowActionSheet(false)}
+            >
+              <Text style={styles.actionSheetButtonCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* User Menu Modal - Three dots menu */}
+      <Modal
+        visible={showUserMenu}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowUserMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUserMenu(false)}
+        >
+          <View style={styles.actionSheet}>
+            <View style={styles.actionSheetHandle} />
+
+            <TouchableOpacity
+              style={styles.actionSheetButton}
+              onPress={handleViewUserProfile}
+            >
+              <Ionicons name="person-outline" size={24} color="#262626" />
+              <Text style={styles.actionSheetButtonText}>Ver perfil de {event.user.name}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionSheetButton, styles.actionSheetButtonCancel]}
+              onPress={() => setShowUserMenu(false)}
             >
               <Text style={styles.actionSheetButtonCancelText}>Cancelar</Text>
             </TouchableOpacity>
@@ -736,23 +857,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: Platform.OS === 'ios' ? 50 : 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingTop: Platform.OS === 'ios' ? 50 : 8,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#efefef',
   },
   headerButton: {
     padding: 8,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#262626',
-  },
   headerSpacer: {
-    width: 40,
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -790,151 +906,209 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  // User Header - Instagram style
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  userTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: 2,
+  },
+  userSubtitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  typeBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  typeBadgeSmallText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  closedBadge: {
+    backgroundColor: '#34C759',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  closedBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  userMenuButton: {
+    padding: 8,
+  },
+  // Map
   mapContainer: {
-    height: 250,
+    height: 220,
     width: '100%',
+    position: 'relative',
   },
   map: {
     flex: 1,
   },
-  infoContainer: {
-    padding: 16,
+  mapMarker: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  badges: {
+  trackingIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  typeBadge: {
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 20,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#FF9500',
-  },
-  statusBadgeClosed: {
+  trackingIndicatorActive: {
     backgroundColor: '#34C759',
   },
-  badgeText: {
+  trackingIndicatorClosed: {
+    backgroundColor: '#8E8E93',
+  },
+  trackingIndicatorText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
-  description: {
-    fontSize: 16,
-    color: '#262626',
-    marginBottom: 16,
-    lineHeight: 22,
-  },
-  metadata: {
-    gap: 6,
-    marginBottom: 16,
-  },
-  metadataText: {
-    fontSize: 13,
-    color: '#666',
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  userName: {
-    fontSize: 13,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  eventImage: {
-    width: '100%',
-    height: 300,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
+  // Interaction Bar
   interactionBar: {
     flexDirection: 'row',
-    gap: 24,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#efefef',
-    marginBottom: 24,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  interactionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
   interactionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    padding: 4,
   },
   interactionCount: {
-    fontSize: 16,
-    color: '#262626',
+    fontSize: 15,
     fontWeight: '600',
-  },
-  commentsSection: {
-    marginTop: 8,
-    paddingBottom: 16,
-  },
-  fixedInputContainer: {
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
     color: '#262626',
-    marginBottom: 16,
   },
-  replyingToBar: {
+  interactionCountActive: {
+    color: '#ed4956',
+  },
+  timeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  replyingToText: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  commentInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
+    gap: 4,
     backgroundColor: '#f5f5f5',
-    borderRadius: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     paddingVertical: 6,
+    borderRadius: 16,
   },
-  commentInput: {
-    flex: 1,
-    maxHeight: 100,
-    minHeight: 40,
+  timeBadgeText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  // Image
+  eventImage: {
+    width: '100%',
+    height: 300,
+    backgroundColor: '#f0f0f0',
+  },
+  // Description
+  descriptionContainer: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  description: {
     fontSize: 15,
     color: '#262626',
-    paddingTop: Platform.OS === 'ios' ? 10 : 8,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    lineHeight: 22,
   },
-  sendButton: {
-    padding: 8,
+  descriptionUserName: {
+    fontWeight: '600',
   },
-  sendButtonDisabled: {
-    opacity: 0.5,
+  // Device info
+  deviceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+  },
+  deviceText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  // Comments Section
+  commentsSection: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#efefef',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#262626',
+    marginBottom: 16,
   },
   noCommentsText: {
     textAlign: 'center',
     color: '#999',
     fontSize: 14,
-    padding: 32,
+    padding: 24,
   },
   commentsList: {
     gap: 16,
@@ -955,6 +1129,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  commentUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  commentAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentAvatarText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   commentHeaderRight: {
     flexDirection: 'row',
@@ -1009,33 +1201,54 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 12,
   },
-  trackingIndicator: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
+  // Fixed Input
+  fixedInputContainer: {
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#efefef',
+    paddingHorizontal: 14,
+    paddingTop: 8,
+  },
+  replyingToBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    backgroundColor: '#f0f0f0',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    borderRadius: 8,
+    marginBottom: 8,
   },
-  trackingIndicatorActive: {
-    backgroundColor: '#34C759',
+  replyingToText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
   },
-  trackingIndicatorClosed: {
-    backgroundColor: '#8E8E93',
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  trackingIndicatorText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+  commentInput: {
+    flex: 1,
+    maxHeight: 100,
+    minHeight: 40,
+    fontSize: 15,
+    color: '#262626',
+    paddingTop: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
   },
+  sendButton: {
+    padding: 8,
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
+  },
+  // Modals
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

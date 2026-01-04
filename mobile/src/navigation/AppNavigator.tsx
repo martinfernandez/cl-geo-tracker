@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -9,6 +9,7 @@ import { useOnboarding } from '../contexts/OnboardingContext';
 import MessageNotification from '../components/MessageNotification';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { PeekLogo } from '../components/PeekLogo';
 import { MapScreen } from '../screens/MapScreen';
 import { DevicesScreen } from '../screens/DevicesScreen';
 import { AddDeviceScreen } from '../screens/AddDeviceScreen';
@@ -503,8 +504,9 @@ export function AppNavigator() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <StatusBar barStyle="dark-content" />
+        <PeekLogo size="large" showBubble={false} />
       </View>
     );
   }

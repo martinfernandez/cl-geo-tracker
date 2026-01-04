@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Modal,
 } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -15,28 +16,45 @@ interface Props {
   initialLocation?: { latitude: number; longitude: number };
 }
 
+const DEFAULT_LOCATION = { latitude: -34.6037, longitude: -58.3816 };
+
 export default function MapLocationPicker({
   visible,
   onClose,
   onSelectLocation,
   initialLocation,
 }: Props) {
+  const { isDark } = useTheme();
   const [selectedLocation, setSelectedLocation] = useState<{
     latitude: number;
     longitude: number;
-  } | null>(initialLocation || null);
+  } | null>(null);
+  const [region, setRegion] = useState<Region | null>(null);
 
-  const defaultRegion: Region = {
-    latitude: initialLocation?.latitude || -34.6037,
-    longitude: initialLocation?.longitude || -58.3816,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
-  };
+  // Reset state when modal opens
+  useEffect(() => {
+    if (visible) {
+      const loc = initialLocation || DEFAULT_LOCATION;
+      setSelectedLocation(initialLocation || null);
+      setRegion({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    } else {
+      setRegion(null);
+    }
+  }, [visible, initialLocation]);
 
   const handleMapPress = (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setSelectedLocation({ latitude, longitude });
   };
+
+  const handleRegionChangeComplete = useCallback((newRegion: Region) => {
+    setRegion(newRegion);
+  }, []);
 
   const handleConfirm = () => {
     if (selectedLocation) {
@@ -44,6 +62,8 @@ export default function MapLocationPicker({
       onClose();
     }
   };
+
+  if (!visible || !region) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -57,8 +77,10 @@ export default function MapLocationPicker({
 
         <MapView
           style={styles.map}
-          initialRegion={defaultRegion}
+          initialRegion={region}
+          onRegionChangeComplete={handleRegionChangeComplete}
           onPress={handleMapPress}
+          userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
           {selectedLocation && (
             <Marker coordinate={selectedLocation} />

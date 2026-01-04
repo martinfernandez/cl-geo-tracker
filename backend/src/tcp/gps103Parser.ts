@@ -89,18 +89,26 @@ export class GPS103Parser {
 
       // Terminal info byte - lower 4 bits contain battery level (0-6)
       const terminalInfo = data[4];
+      const voltageLevel = data[5]; // Voltage level byte (0-6 typically)
       const batteryRaw = terminalInfo & 0x07; // Lower 3 bits for battery
       const isCharging = (terminalInfo & 0x08) !== 0; // Bit 3 for charging status
 
       // GSM signal strength - lower 4 bits (0-4)
       const gsmRaw = data[6] & 0x0f;
 
-      const batteryLevel = BATTERY_LEVEL_MAP[batteryRaw] ?? 0;
+      // Use voltage level if terminal info shows 0 (some devices report voltage separately)
+      // Voltage level: 0=lowest, 6=highest, map to percentage
+      const effectiveBatteryRaw = batteryRaw > 0 ? batteryRaw : voltageLevel;
+      const batteryLevel = BATTERY_LEVEL_MAP[effectiveBatteryRaw] ?? 0;
       const gsmSignal = GSM_SIGNAL_MAP[gsmRaw] ?? 0;
 
       console.log(`Parsed GPS103 status (0x${protocolNumber.toString(16)}):`, {
         imei,
+        terminalInfoHex: `0x${terminalInfo.toString(16)}`,
+        voltageLevelHex: `0x${voltageLevel.toString(16)}`,
         batteryRaw,
+        voltageLevel,
+        effectiveBatteryRaw,
         batteryLevel,
         isCharging,
         gsmRaw,

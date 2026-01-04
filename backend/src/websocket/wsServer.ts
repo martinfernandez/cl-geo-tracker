@@ -12,6 +12,7 @@ const REDIS_CHANNELS = {
   NEW_MESSAGE: 'ws:new_message',
   USER_MESSAGE: 'ws:user_message',
   GROUP_POSITION: 'ws:group_position',
+  REQUEST_LOCATION: 'ws:request_location',
 };
 
 interface ConnectedClient {
@@ -53,6 +54,10 @@ export function startWebSocketServer(httpServer: HttpServer) {
 
     subscribe(REDIS_CHANNELS.GROUP_POSITION, (_, data) => {
       localBroadcastGroupPosition(data.groupId, data.data);
+    });
+
+    subscribe(REDIS_CHANNELS.REQUEST_LOCATION, (_, data) => {
+      localRequestLocationFromUsers(data.userIds, data.requesterId);
     });
   }
 
@@ -481,5 +486,46 @@ export function broadcastGroupPositionUpdate(groupId: string, data: any) {
     publish(REDIS_CHANNELS.GROUP_POSITION, { groupId, data });
   } else {
     localBroadcastGroupPosition(groupId, data);
+  }
+}
+
+// Local request location from users on this instance
+function localRequestLocationFromUsers(userIds: string[], requesterId?: string) {
+  const message = JSON.stringify({
+    type: 'request_location',
+    requesterId,
+    timestamp: new Date().toISOString(),
+  });
+
+  let sentCount = 0;
+  userIds.forEach((userId) => {
+    // Don't request from the requester themselves
+    if (userId === requesterId) return;
+
+    const userSockets = userConnections.get(userId);
+    if (userSockets) {
+      userSockets.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+          sentCount++;
+        }
+      });
+    }
+  });
+
+  if (sentCount > 0) {
+    console.log(`[WS] Requested location from ${sentCount} connected users`);
+  }
+}
+
+// Request location from specific users (with Redis support)
+// Called when someone views the map to get fresh positions
+export function requestLocationFromUsers(userIds: string[], requesterId?: string) {
+  console.log(`[WS] Requesting location from ${userIds.length} users`);
+
+  if (isRedisEnabled()) {
+    publish(REDIS_CHANNELS.REQUEST_LOCATION, { userIds, requesterId });
+  } else {
+    localRequestLocationFromUsers(userIds, requesterId);
   }
 }

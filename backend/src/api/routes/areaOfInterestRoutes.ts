@@ -9,6 +9,7 @@ export const areaOfInterestRouter = Router();
 areaOfInterestRouter.post('/', authMiddleware, AreaOfInterestController.create);
 areaOfInterestRouter.get('/my-areas', authMiddleware, AreaOfInterestController.getMyAreas);
 areaOfInterestRouter.get('/search', authMiddleware, AreaOfInterestController.search);
+areaOfInterestRouter.get('/nearby', authMiddleware, AreaOfInterestController.getNearbyAreas);
 areaOfInterestRouter.get('/:id', authMiddleware, AreaOfInterestController.getById);
 areaOfInterestRouter.put('/:id', authMiddleware, AreaOfInterestController.update);
 areaOfInterestRouter.delete('/:id', authMiddleware, AreaOfInterestController.delete);
@@ -16,6 +17,9 @@ areaOfInterestRouter.delete('/:id', authMiddleware, AreaOfInterestController.del
 // Membership management
 areaOfInterestRouter.post('/:id/join', authMiddleware, AreaOfInterestController.join);
 areaOfInterestRouter.post('/:id/leave', authMiddleware, AreaOfInterestController.leave);
+areaOfInterestRouter.get('/:id/membership', authMiddleware, AreaOfInterestController.getMembership);
+areaOfInterestRouter.put('/:id/notifications', authMiddleware, AreaOfInterestController.toggleNotifications);
+areaOfInterestRouter.post('/:id/seen', authMiddleware, AreaOfInterestController.markAreaAsSeen);
 areaOfInterestRouter.delete(
   '/:id/members/:memberId',
   authMiddleware,

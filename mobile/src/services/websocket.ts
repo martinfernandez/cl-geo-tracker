@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ENV } from '../config/environment';
+import { submitLocationOnDemand } from './backgroundLocation';
 
 type EventCallback = (data: any) => void;
 
@@ -240,6 +241,20 @@ class WebSocketService {
         // New event in user's area of interest
         console.log('[WS] area_event received:', data);
         this.emit('area_event', data);
+        break;
+
+      case 'position_update':
+        // GPS device position update
+        console.log('[WS] position_update received:', data);
+        this.emit('position_update', data);
+        break;
+
+      case 'request_location':
+        // Server is requesting current location (someone is viewing the map)
+        console.log('[WS] request_location received');
+        submitLocationOnDemand().catch((err) => {
+          console.error('[WS] Error submitting on-demand location:', err);
+        });
         break;
 
       case 'error':

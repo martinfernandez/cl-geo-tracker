@@ -14,9 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { areaApi } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function CreateAreaScreen({ navigation }: any) {
   const { showSuccess, showError } = useToast();
+  const { isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -149,6 +151,7 @@ export default function CreateAreaScreen({ navigation }: any) {
                 longitudeDelta: (radius / 111000) * 4,
               }}
               onPress={handleMapPress}
+              userInterfaceStyle={isDark ? 'dark' : 'light'}
             >
               <Marker
                 coordinate={{ latitude, longitude }}

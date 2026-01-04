@@ -2,8 +2,12 @@ import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
+import * as Linking from 'expo-linking';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { OnboardingProvider } from './src/contexts/OnboardingContext';
 import { ToastProvider } from './src/contexts/ToastContext';
+import { PeekModeProvider } from './src/contexts/PeekModeContext';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { registerForPushNotificationsAsync, NotificationType } from './src/services/notifications';
 import { areaApi } from './src/services/api';
@@ -85,9 +89,45 @@ export default function App() {
     }
   };
 
+  // Handler para deep links
+  const handleDeepLink = (url: string) => {
+    console.log('🔗 Deep link received:', url);
+
+    if (!navigationRef.current) {
+      console.log('Navigation not ready, storing URL for later');
+      return;
+    }
+
+    try {
+      // Parse the URL
+      const parsed = Linking.parse(url);
+      console.log('Parsed URL:', parsed);
+
+      // Handle different URL patterns
+      // geotracker://event/[eventId]
+      // https://cl-geo-tracker-production.up.railway.app/e/[eventId]
+
+      if (parsed.scheme === 'geotracker' && parsed.hostname === 'event' && parsed.path) {
+        // Custom scheme: geotracker://event/[eventId]
+        const eventId = parsed.path;
+        console.log('Navigating to event:', eventId);
+        navigationRef.current.navigate('EventDetail', { eventId });
+      } else if (parsed.path?.startsWith('/e/') || parsed.path?.startsWith('e/')) {
+        // Web URL: https://domain.com/e/[eventId]
+        const eventId = parsed.path.replace(/^\/e\//, '').replace(/^e\//, '');
+        console.log('Navigating to event from web URL:', eventId);
+        navigationRef.current.navigate('EventDetail', { eventId });
+      }
+    } catch (error) {
+      console.error('Error handling deep link:', error);
+    }
+  };
+
   // Handler por defecto cuando se toca la notificación
   const handleDefaultNotificationAction = (data: any) => {
     if (!navigationRef.current) return;
+
+    console.log('🔔 Handling default notification action with data:', data);
 
     switch (data.type) {
       case NotificationType.AREA_JOIN_ACCEPTED:
@@ -106,6 +146,14 @@ export default function App() {
           navigationRef.current.navigate('EventDetail', { eventId: data.eventId });
         }
         break;
+
+      case 'FOUND_OBJECT':
+      case 'FOUND_OBJECT_MESSAGE':
+        if (data.chatId) {
+          console.log('🔔 Navigating to FoundChat with chatId:', data.chatId);
+          navigationRef.current.navigate('FoundChat', { chatId: data.chatId });
+        }
+        break;
     }
   };
 
@@ -115,6 +163,21 @@ export default function App() {
 
     // Iniciar polling de notificaciones
     startNotificationPolling();
+
+    // Handle deep links
+    // Check if the app was opened via a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('App opened with initial URL:', url);
+        // Small delay to ensure navigation is ready
+        setTimeout(() => handleDeepLink(url), 500);
+      }
+    });
+
+    // Listen for deep links while the app is running
+    const linkingSubscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
 
     // Listener para cuando llega una notificación mientras la app está abierta
     notificationListener.current = Notifications.addNotificationReceivedListener(
@@ -142,6 +205,7 @@ export default function App() {
 
     return () => {
       try {
+        linkingSubscription.remove();
         if (notificationListener.current && typeof notificationListener.current.remove === 'function') {
           notificationListener.current.remove();
         }
@@ -157,13 +221,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <NavigationContainer ref={navigationRef}>
-            <AppNavigator />
-          </NavigationContainer>
-        </ToastProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <PeekModeProvider>
+          <AuthProvider>
+            <OnboardingProvider>
+              <ToastProvider>
+                <NavigationContainer ref={navigationRef}>
+                  <AppNavigator />
+                </NavigationContainer>
+              </ToastProvider>
+            </OnboardingProvider>
+          </AuthProvider>
+        </PeekModeProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

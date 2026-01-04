@@ -50,9 +50,13 @@ export default function NotificationsListScreen({ navigation }: any) {
         );
       }
 
-      // Navigate to relevant screen
-      if (notification.eventId) {
+      // Navigate to relevant screen based on notification type
+      if (notification.areaId) {
+        navigation.navigate('AreaDetail', { areaId: notification.areaId });
+      } else if (notification.eventId) {
         navigation.navigate('EventDetail', { eventId: notification.eventId });
+      } else if (notification.chatId && (notification.type === 'FOUND_OBJECT' || notification.type === 'FOUND_OBJECT_MESSAGE')) {
+        navigation.navigate('FoundChat', { chatId: notification.chatId });
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -87,6 +91,15 @@ export default function NotificationsListScreen({ navigation }: any) {
       case 'EVENT_COMMENT':
       case 'COMMENT_REPLY':
         return 'chatbubble';
+      case 'AREA_JOIN_REQUEST':
+        return 'person-add';
+      case 'AREA_JOIN_ACCEPTED':
+        return 'checkmark-circle';
+      case 'AREA_INVITATION':
+        return 'mail';
+      case 'FOUND_OBJECT':
+      case 'FOUND_OBJECT_MESSAGE':
+        return 'locate';
       default:
         return 'notifications';
     }

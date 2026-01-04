@@ -35,8 +35,8 @@ function getEnvironment(): Environment {
     return easEnv;
   }
 
-  // Fallback: development in __DEV__, production otherwise
-  const fallback = __DEV__ ? 'development' : 'production';
+  // Fallback: production for Railway
+  const fallback: Environment = 'production';
   console.log(`[Environment] Using fallback: ${fallback}`);
   return fallback;
 }

@@ -111,6 +111,8 @@ export class AreaOfInterestController {
         ...m.area,
         memberCount: m.area._count.members,
         userRole: m.role,
+        notificationsEnabled: m.notificationsEnabled,
+        newEventsCount: m.newEventsCount,
         pendingRequestsCount: m.role === 'ADMIN' ? (pendingRequestsMap.get(m.area.id) || 0) : 0,
       }));
 
@@ -561,6 +563,234 @@ export class AreaOfInterestController {
     } catch (error) {
       console.error('Error updating member role:', error);
       res.status(500).json({ error: 'Failed to update member role' });
+    }
+  }
+
+  // Toggle notifications for an area
+  static async toggleNotifications(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+      const { enabled } = req.body;
+
+      const membership = await prisma.areaMembership.findUnique({
+        where: {
+          areaId_userId: {
+            areaId: id,
+            userId,
+          },
+        },
+      });
+
+      if (!membership) {
+        return res.status(404).json({ error: 'Not a member of this area' });
+      }
+
+      const updated = await prisma.areaMembership.update({
+        where: {
+          areaId_userId: {
+            areaId: id,
+            userId,
+          },
+        },
+        data: {
+          notificationsEnabled: enabled !== undefined ? enabled : !membership.notificationsEnabled,
+        },
+      });
+
+      res.json({ notificationsEnabled: updated.notificationsEnabled });
+    } catch (error) {
+      console.error('Error toggling notifications:', error);
+      res.status(500).json({ error: 'Failed to toggle notifications' });
+    }
+  }
+
+  // Reset new events count (mark as seen)
+  static async markAreaAsSeen(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+
+      const membership = await prisma.areaMembership.findUnique({
+        where: {
+          areaId_userId: {
+            areaId: id,
+            userId,
+          },
+        },
+      });
+
+      if (!membership) {
+        return res.status(404).json({ error: 'Not a member of this area' });
+      }
+
+      await prisma.areaMembership.update({
+        where: {
+          areaId_userId: {
+            areaId: id,
+            userId,
+          },
+        },
+        data: {
+          newEventsCount: 0,
+          lastSeenAt: new Date(),
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error marking area as seen:', error);
+      res.status(500).json({ error: 'Failed to mark area as seen' });
+    }
+  }
+
+  // Get membership info (including notification settings)
+  static async getMembership(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+
+      const membership = await prisma.areaMembership.findUnique({
+        where: {
+          areaId_userId: {
+            areaId: id,
+            userId,
+          },
+        },
+        include: {
+          area: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!membership) {
+        return res.status(404).json({ error: 'Not a member of this area' });
+      }
+
+      res.json(membership);
+    } catch (error) {
+      console.error('Error getting membership:', error);
+      res.status(500).json({ error: 'Failed to get membership' });
+    }
+  }
+
+  // Get nearby areas (suggestions based on user location)
+  static async getNearbyAreas(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { latitude, longitude, radiusKm = 50 } = req.query;
+
+      console.log('[NearbyAreas] Request received:', { latitude, longitude, radiusKm, userId });
+
+      if (!latitude || !longitude) {
+        return res.status(400).json({ error: 'Latitude and longitude are required' });
+      }
+
+      const lat = parseFloat(latitude as string);
+      const lng = parseFloat(longitude as string);
+      const searchRadiusKm = parseFloat(radiusKm as string);
+
+      console.log('[NearbyAreas] Parsed coordinates:', { lat, lng, searchRadiusKm });
+
+      // Get all public and private_shareable areas
+      const areas = await prisma.areaOfInterest.findMany({
+        where: {
+          visibility: {
+            in: ['PUBLIC', 'PRIVATE_SHAREABLE'],
+          },
+        },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          _count: {
+            select: {
+              members: true,
+            },
+          },
+          members: {
+            where: { userId },
+            select: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      // Calculate distance using Haversine formula and filter by distance
+      const R = 6371; // Earth's radius in km
+      const nearbyAreas = areas
+        .map((area) => {
+          const dLat = ((area.latitude - lat) * Math.PI) / 180;
+          const dLng = ((area.longitude - lng) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat * Math.PI) / 180) *
+              Math.cos((area.latitude * Math.PI) / 180) *
+              Math.sin(dLng / 2) *
+              Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = R * c; // Distance in km
+
+          return {
+            ...area,
+            distance,
+          };
+        })
+        .filter((area) => area.distance <= searchRadiusKm)
+        .sort((a, b) => a.distance - b.distance);
+
+      // Check for pending join requests
+      const areaIds = nearbyAreas.map((a) => a.id);
+      const pendingRequests = await prisma.areaInvitation.findMany({
+        where: {
+          areaId: { in: areaIds },
+          senderId: userId,
+          type: 'JOIN_REQUEST',
+          status: 'PENDING',
+        },
+        select: {
+          areaId: true,
+        },
+      });
+
+      const pendingRequestAreaIds = new Set(pendingRequests.map((pr) => pr.areaId));
+
+      const results = nearbyAreas.map((area) => ({
+        id: area.id,
+        name: area.name,
+        description: area.description,
+        latitude: area.latitude,
+        longitude: area.longitude,
+        radius: area.radius,
+        visibility: area.visibility,
+        creator: area.creator,
+        memberCount: area._count.members,
+        distance: Math.round(area.distance * 10) / 10, // Round to 1 decimal
+        userRole: area.members[0]?.role || null,
+        isMember: area.members.length > 0,
+        hasPendingRequest: pendingRequestAreaIds.has(area.id),
+      }));
+
+      // Return top 20 nearest areas (that user is not already a member of first, then members)
+      const notMemberAreas = results.filter((a) => !a.isMember);
+      const memberAreas = results.filter((a) => a.isMember);
+
+      const finalResults = [...notMemberAreas, ...memberAreas].slice(0, 20);
+      console.log('[NearbyAreas] Returning', finalResults.length, 'areas:', finalResults.map(a => ({ name: a.name, distance: a.distance })));
+
+      res.json(finalResults);
+    } catch (error) {
+      console.error('Error fetching nearby areas:', error);
+      res.status(500).json({ error: 'Failed to fetch nearby areas' });
     }
   }
 }

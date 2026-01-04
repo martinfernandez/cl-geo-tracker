@@ -9,9 +9,12 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { areaApi, AreaOfInterest } from '../services/api';
+import { areaApi, AreaOfInterest, api } from '../services/api';
+import { useMapStore } from '../store/useMapStore';
+import { useToast } from '../contexts/ToastContext';
 
 export default function AreasListScreen({ navigation, route }: any) {
+  const { showSuccess, showError } = useToast();
   const [areas, setAreas] = useState<AreaOfInterest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,17 +59,38 @@ export default function AreasListScreen({ navigation, route }: any) {
   };
 
   const handleViewOnMap = (area: AreaOfInterest) => {
-    navigation.navigate('Main', {
-      screen: 'Map',
-      params: {
-        centerArea: {
-          latitude: area.latitude,
-          longitude: area.longitude,
-          radius: area.radius,
-          name: area.name,
-        },
-      },
+    // Set the pending center area in the store
+    useMapStore.getState().setPendingCenterArea({
+      latitude: area.latitude,
+      longitude: area.longitude,
+      radius: area.radius,
+      name: area.name,
     });
+    // Navigate to the Map tab
+    navigation.navigate('Main', { screen: 'Map' });
+  };
+
+  const handleToggleNotifications = async (area: AreaOfInterest) => {
+    try {
+      const newValue = !area.notificationsEnabled;
+      const response = await api.put(`/areas/${area.id}/notifications`, {
+        enabled: newValue,
+      });
+
+      // Update local state
+      setAreas((prev) =>
+        prev.map((a) =>
+          a.id === area.id
+            ? { ...a, notificationsEnabled: response.data.notificationsEnabled }
+            : a
+        )
+      );
+
+      showSuccess(newValue ? 'Notificaciones activadas' : 'Notificaciones silenciadas');
+    } catch (error) {
+      console.error('Error toggling notifications:', error);
+      showError('No se pudo cambiar la configuración');
+    }
   };
 
   const renderAreaItem = ({ item }: { item: AreaOfInterest }) => {
@@ -83,68 +107,111 @@ export default function AreasListScreen({ navigation, route }: any) {
     };
 
     const hasPendingRequests = item.pendingRequestsCount && item.pendingRequestsCount > 0;
+    const hasNewEvents = (item as any).newEventsCount && (item as any).newEventsCount > 0;
+    const notificationsEnabled = (item as any).notificationsEnabled !== false;
 
     return (
       <View style={styles.areaCard}>
         <TouchableOpacity
           style={styles.areaCardContent}
           onPress={() => navigation.navigate('AreaDetail', { areaId: item.id })}
+          activeOpacity={0.7}
         >
           <View style={styles.areaHeader}>
             <View style={styles.areaInfo}>
               <View style={styles.areaNameRow}>
-                <Text style={styles.areaName}>{item.name}</Text>
-                {hasPendingRequests && (
+                <Text style={styles.areaName} numberOfLines={1}>{item.name || ''}</Text>
+                {hasPendingRequests ? (
                   <View style={styles.pendingBadge}>
                     <Text style={styles.pendingBadgeText}>{item.pendingRequestsCount}</Text>
                   </View>
-                )}
+                ) : null}
+                {hasNewEvents ? (
+                  <View style={styles.eventsBadge}>
+                    <Text style={styles.eventsBadgeText}>{(item as any).newEventsCount}</Text>
+                  </View>
+                ) : null}
               </View>
-              {item.description && (
+              {item.description ? (
                 <Text style={styles.areaDescription} numberOfLines={2}>
                   {item.description}
                 </Text>
-              )}
-            </View>
-            <View
-              style={[
-                styles.visibilityBadge,
-                { backgroundColor: visibilityColors[item.visibility] },
-              ]}
-            >
-              <Text style={styles.visibilityText}>
-                {visibilityLabels[item.visibility]}
-              </Text>
+              ) : null}
             </View>
           </View>
 
           <View style={styles.areaFooter}>
-            <View style={styles.statItem}>
-              <Ionicons name="people" size={16} color="#666" />
-              <Text style={styles.statText}>{item.memberCount} miembros</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="radio" size={16} color="#666" />
-              <Text style={styles.statText}>{(item.radius / 1000).toFixed(1)} km</Text>
-            </View>
-            {item.userRole && (
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleText}>
-                  {item.userRole === 'ADMIN' ? 'Admin' : 'Miembro'}
+            <View style={styles.footerLeft}>
+              <View
+                style={[
+                  styles.visibilityBadge,
+                  { backgroundColor: visibilityColors[item.visibility] || '#8E8E93' },
+                ]}
+              >
+                <Text style={styles.visibilityText}>
+                  {visibilityLabels[item.visibility] || 'Privada'}
                 </Text>
               </View>
-            )}
+              {item.userRole ? (
+                <View style={styles.roleBadge}>
+                  <Text style={styles.roleText}>
+                    {item.userRole === 'ADMIN' ? 'Admin' : 'Miembro'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.footerRight}>
+              <View style={styles.statItem}>
+                <Ionicons name="people" size={14} color="#8E8E93" />
+                <Text style={styles.statText}>{item.memberCount ?? 0}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="radio" size={14} color="#8E8E93" />
+                <Text style={styles.statText}>{((item.radius || 0) / 1000).toFixed(1)} km</Text>
+              </View>
+            </View>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.viewButton}
-          onPress={() => handleViewOnMap(item)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="map" size={20} color="#fff" />
-          <Text style={styles.viewButtonText}>Ver en Mapa</Text>
-        </TouchableOpacity>
+        {/* Quick Actions Row */}
+        <View style={styles.quickActionsRow}>
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => handleViewOnMap(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="map-outline" size={20} color="#007AFF" />
+            <Text style={styles.quickActionText}>Mapa</Text>
+          </TouchableOpacity>
+
+          <View style={styles.quickActionDivider} />
+
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => handleToggleNotifications(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={notificationsEnabled ? 'notifications' : 'notifications-off-outline'}
+              size={20}
+              color={notificationsEnabled ? '#34C759' : '#8E8E93'}
+            />
+            <Text style={[styles.quickActionText, { color: notificationsEnabled ? '#34C759' : '#8E8E93' }]}>
+              {notificationsEnabled ? 'Activas' : 'Silenciadas'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.quickActionDivider} />
+
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => navigation.navigate('AreaDetail', { areaId: item.id })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
+            <Text style={styles.quickActionText}>Detalles</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -181,7 +248,10 @@ export default function AreasListScreen({ navigation, route }: any) {
         data={areas}
         renderItem={renderAreaItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[
+          styles.listContainer,
+          areas.length === 0 && styles.emptyListContainer,
+        ]}
         onRefresh={handleRefresh}
         refreshing={refreshing}
         ListEmptyComponent={
@@ -242,6 +312,10 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
+    flexGrow: 1,
+  },
+  emptyListContainer: {
+    justifyContent: 'center',
   },
   areaCard: {
     backgroundColor: '#fff',
@@ -257,31 +331,36 @@ const styles = StyleSheet.create({
   areaCardContent: {
     padding: 16,
   },
-  viewButton: {
+  quickActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+    paddingVertical: 10,
+  },
+  quickActionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderTopWidth: 0,
-    backgroundColor: '#007AFF',
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
+    gap: 6,
+    paddingVertical: 4,
   },
-  viewButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.3,
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#007AFF',
+  },
+  quickActionDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#E5E5E5',
   },
   areaHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 12,
   },
   areaInfo: {
     flex: 1,
-    marginRight: 12,
   },
   areaNameRow: {
     flexDirection: 'row',
@@ -307,6 +386,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  eventsBadge: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  eventsBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   areaDescription: {
     fontSize: 14,
     color: '#666',
@@ -314,19 +406,28 @@ const styles = StyleSheet.create({
   },
   visibilityBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
-    alignSelf: 'flex-start',
   },
   visibilityText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#fff',
     fontWeight: '600',
   },
   areaFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'space-between',
+  },
+  footerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   statItem: {
     flexDirection: 'row',
@@ -334,25 +435,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statText: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: 12,
+    color: '#8E8E93',
   },
   roleBadge: {
-    marginLeft: 'auto',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     backgroundColor: '#007AFF',
     borderRadius: 6,
   },
   roleText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#fff',
     fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingTop: 80,
+    justifyContent: 'center',
     paddingHorizontal: 32,
+    flex: 1,
   },
   emptyTitle: {
     fontSize: 20,
