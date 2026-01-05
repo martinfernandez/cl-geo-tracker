@@ -425,11 +425,11 @@ export class MessageController {
       let receiverId: string | null = null;
 
       if (!isGroupChat) {
+        // For self-conversations, both participants are the same user
+        // For regular 1-to-1, find the other participant
         const receiverParticipant = conversation.participants.find((p) => p.userId !== userId);
-        if (!receiverParticipant) {
-          return res.status(400).json({ error: 'No receiver found' });
-        }
-        receiverId = receiverParticipant.userId;
+        // If no other participant found, it's a self-conversation - use own userId
+        receiverId = receiverParticipant?.userId || userId;
       }
 
       // Create message
