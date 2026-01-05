@@ -86,6 +86,11 @@ model Device {
   lockedAt      DateTime?
   lastAlertAt   DateTime?  // To prevent spam notifications
 
+  // GPS reporting interval settings (for JX10 devices)
+  activeInterval  Int      @default(30)   // seconds - interval when device has active event
+  idleInterval    Int      @default(600)  // seconds - interval when no active events (10 min)
+  currentInterval Int?                    // current configured interval on device
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   positions Position[]

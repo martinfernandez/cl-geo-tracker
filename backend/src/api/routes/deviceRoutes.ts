@@ -19,3 +19,7 @@ deviceRouter.patch('/:id/lock-radius', authMiddleware, DeviceController.updateLo
 deviceRouter.get('/:id/qr', authMiddleware, DeviceController.getQR);
 deviceRouter.put('/:id/qr', authMiddleware, DeviceController.toggleQR);
 deviceRouter.post('/:id/qr/regenerate', authMiddleware, DeviceController.regenerateQR);
+
+// GPS Interval control endpoints
+deviceRouter.post('/:id/interval', authMiddleware, DeviceController.setGpsInterval);
+deviceRouter.patch('/:id/interval-settings', authMiddleware, DeviceController.updateIntervalSettings);

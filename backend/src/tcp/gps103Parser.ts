@@ -293,4 +293,114 @@ export class GPS103Parser {
 
     return response;
   }
+
+  /**
+   * Calculate CRC16-X25 checksum for GT06 protocol
+   * This is used for server command packets
+   */
+  private static calculateCRC16(data: Buffer): number {
+    const POLYNOMIAL = 0x8408;
+    let crc = 0xFFFF;
+
+    for (let i = 0; i < data.length; i++) {
+      crc ^= data[i];
+      for (let j = 0; j < 8; j++) {
+        if (crc & 0x0001) {
+          crc = (crc >> 1) ^ POLYNOMIAL;
+        } else {
+          crc = crc >> 1;
+        }
+      }
+    }
+
+    return crc ^ 0xFFFF;
+  }
+
+  /**
+   * Generate a server command packet (protocol 0x80) to send to the GPS device
+   * This is used to send configuration commands like changing the upload interval
+   *
+   * @param command - ASCII command string (e.g., "TIMER,30#" for 30 second interval)
+   * @param serialNumber - Packet serial number (usually incrementing)
+   * @param serverFlags - Server flag bytes (default 0x00000001)
+   * @returns Buffer containing the complete packet to send to device
+   *
+   * GT06 Server Command packet structure:
+   * [0-1]: Start bits 0x7878
+   * [2]: Packet length (from protocol number to before CRC)
+   * [3]: Protocol number (0x80 for server command)
+   * [4-7]: Server flags (4 bytes, big-endian)
+   * [8-N]: ASCII command content
+   * [N+1-N+2]: Serial number (2 bytes, big-endian)
+   * [N+3-N+4]: CRC16 (2 bytes)
+   * [N+5-N+6]: Stop bits 0x0D0A
+   */
+  static generateServerCommand(
+    command: string,
+    serialNumber: number,
+    serverFlags: number = 0x00000001
+  ): Buffer {
+    const commandBytes = Buffer.from(command, 'ascii');
+
+    // Calculate total packet length:
+    // 2 (start) + 1 (length) + 1 (protocol) + 4 (server flags) + command.length + 2 (serial) + 2 (CRC) + 2 (stop)
+    const contentLength = 1 + 4 + commandBytes.length + 2; // protocol + flags + command + serial
+    const totalLength = 2 + 1 + contentLength + 2 + 2; // start + length + content + CRC + stop
+
+    const packet = Buffer.alloc(totalLength);
+    let offset = 0;
+
+    // Start bits
+    packet[offset++] = 0x78;
+    packet[offset++] = 0x78;
+
+    // Length byte (from protocol to before CRC, not including length byte itself)
+    packet[offset++] = contentLength;
+
+    // Protocol number (0x80 for server command)
+    packet[offset++] = 0x80;
+
+    // Server flags (4 bytes)
+    packet.writeUInt32BE(serverFlags, offset);
+    offset += 4;
+
+    // Command content (ASCII)
+    commandBytes.copy(packet, offset);
+    offset += commandBytes.length;
+
+    // Serial number (2 bytes)
+    packet.writeUInt16BE(serialNumber, offset);
+    offset += 2;
+
+    // Calculate CRC over length + content (from byte 2 to before CRC)
+    const crcData = packet.slice(2, offset);
+    const crc = this.calculateCRC16(crcData);
+    packet.writeUInt16BE(crc, offset);
+    offset += 2;
+
+    // Stop bits
+    packet[offset++] = 0x0d;
+    packet[offset++] = 0x0a;
+
+    return packet;
+  }
+
+  /**
+   * Generate TIMER command to set the device's GPS upload interval
+   * JX10/GT06 devices use the format: TIMER,interval#
+   *
+   * @param intervalSeconds - Upload interval in seconds (minimum 10, recommended 30-600)
+   * @param serialNumber - Packet serial number
+   * @returns Buffer containing the complete command packet
+   */
+  static generateTimerCommand(intervalSeconds: number, serialNumber: number): Buffer {
+    // Ensure minimum interval of 10 seconds to prevent device overload
+    const safeInterval = Math.max(10, intervalSeconds);
+
+    // JX10 format: TIMER,interval# (no password needed for most devices)
+    const command = `TIMER,${safeInterval}#`;
+
+    console.log(`[GPS103] Generating TIMER command: ${command}`);
+    return this.generateServerCommand(command, serialNumber);
+  }
 }

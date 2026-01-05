@@ -3,6 +3,7 @@ import { GPS103Parser } from './gps103Parser';
 import { prisma } from '../config/database';
 import { broadcastPositionUpdate } from '../websocket/wsServer';
 import { sendDeviceMovementAlert } from '../services/pushNotificationService';
+import { setSocketImeiMap, onDeviceConnected } from '../services/deviceCommandService';
 
 const TCP_PORT = Number(process.env.TCP_PORT) || 8841;
 
@@ -60,8 +61,12 @@ async function checkDeviceLockViolation(
   newLatitude: number,
   newLongitude: number
 ): Promise<void> {
+  // Debug log to see lock state
+  console.log(`[LOCK CHECK] Device ${device.imei}: isLocked=${device.isLocked}, lockLat=${device.lockLatitude}, lockLon=${device.lockLongitude}, lockRadius=${device.lockRadius}`);
+
   // Skip if device is not locked
   if (!device.isLocked || device.lockLatitude === null || device.lockLongitude === null) {
+    console.log(`[LOCK CHECK] Device ${device.imei} not locked or missing lock coordinates, skipping`);
     return;
   }
 
@@ -73,17 +78,22 @@ async function checkDeviceLockViolation(
     newLongitude
   );
 
+  console.log(`[LOCK CHECK] Device ${device.imei}: distance=${distance.toFixed(1)}m, lockRadius=${device.lockRadius}m, newPos=(${newLatitude}, ${newLongitude})`);
+
   // Check if outside allowed radius
   if (distance <= device.lockRadius) {
+    console.log(`[LOCK CHECK] Device ${device.imei} within allowed range, skipping alert`);
     return; // Within allowed range
   }
+
+  console.log(`[LOCK CHECK] Device ${device.imei} OUTSIDE lock radius! distance=${distance.toFixed(1)}m > lockRadius=${device.lockRadius}m`);
 
   // Check cooldown to prevent notification spam
   const now = new Date();
   if (device.lastAlertAt) {
     const timeSinceLastAlert = now.getTime() - new Date(device.lastAlertAt).getTime();
     if (timeSinceLastAlert < ALERT_COOLDOWN_MS) {
-      console.log(`Device ${device.imei} movement alert skipped (cooldown)`);
+      console.log(`[LOCK CHECK] Device ${device.imei} movement alert skipped (cooldown: ${Math.round(timeSinceLastAlert/1000)}s < ${ALERT_COOLDOWN_MS/1000}s)`);
       return;
     }
   }
@@ -98,9 +108,11 @@ async function checkDeviceLockViolation(
 
   // Get device owner's push token
   if (!device.userId) {
-    console.log(`Device ${device.imei} has no owner, skipping alert`);
+    console.log(`[LOCK CHECK] Device ${device.imei} has no owner (userId is null), skipping alert`);
     return;
   }
+
+  console.log(`[LOCK CHECK] Device ${device.imei} looking up user ${device.userId} for push token`);
 
   const user = await prisma.user.findUnique({
     where: { id: device.userId },
@@ -108,9 +120,11 @@ async function checkDeviceLockViolation(
   });
 
   if (!user?.expoPushToken) {
-    console.log(`User ${device.userId} has no push token, skipping alert`);
+    console.log(`[LOCK CHECK] User ${device.userId} has no expoPushToken, skipping alert`);
     return;
   }
+
+  console.log(`[LOCK CHECK] Sending push notification to user ${device.userId} for device ${device.imei}`);
 
   // Send push notification
   await sendDeviceMovementAlert(
@@ -134,6 +148,9 @@ async function checkDeviceLockViolation(
 const socketImeiMap = new Map<net.Socket, string>();
 
 export function startTcpServer() {
+  // Initialize the socket map reference for device command service
+  setSocketImeiMap(socketImeiMap);
+
   const server = net.createServer((socket) => {
     console.log('Device connected:', socket.remoteAddress);
     let buffer = Buffer.alloc(0);
@@ -185,6 +202,9 @@ export function startTcpServer() {
             const response = GPS103Parser.generateLoginResponse(serialNumber);
             socket.write(response);
             console.log('Sent login response');
+
+            // Notify device command service that device is connected
+            onDeviceConnected(imei);
             continue; // Skip GPS data parsing for login packet
           }
 

@@ -3,6 +3,7 @@ import { prisma } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
 import { sendPushNotification } from '../../services/pushNotificationService';
 import { DeviceType } from '@prisma/client';
+import { setDeviceInterval } from '../../services/deviceCommandService';
 
 export class DeviceController {
   static async getAll(req: AuthRequest, res: Response) {
@@ -436,6 +437,95 @@ export class DeviceController {
     } catch (error) {
       console.error('Error regenerating device QR:', error);
       res.status(500).json({ error: 'Failed to regenerate device QR' });
+    }
+  }
+
+  // Set GPS device upload interval (sends command immediately if connected)
+  static async setGpsInterval(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+      const { intervalSeconds } = req.body;
+
+      if (!intervalSeconds || intervalSeconds < 10) {
+        return res.status(400).json({ error: 'intervalSeconds must be at least 10' });
+      }
+
+      // Check if device exists and is owned by user
+      const existingDevice = await prisma.device.findFirst({
+        where: { id, userId },
+      });
+
+      if (!existingDevice) {
+        return res.status(404).json({ error: 'Device not found or not owned by user' });
+      }
+
+      if (existingDevice.type !== 'GPS_TRACKER') {
+        return res.status(400).json({ error: 'Device is not a GPS tracker' });
+      }
+
+      // Send interval command to device
+      const result = await setDeviceInterval(id, intervalSeconds);
+
+      res.json({
+        device: existingDevice,
+        ...result,
+      });
+    } catch (error) {
+      console.error('Error setting device interval:', error);
+      res.status(500).json({ error: 'Failed to set device interval' });
+    }
+  }
+
+  // Update interval settings for a GPS device (active/idle intervals)
+  static async updateIntervalSettings(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+      const { activeInterval, idleInterval } = req.body;
+
+      // Validate inputs
+      if (activeInterval !== undefined && activeInterval < 10) {
+        return res.status(400).json({ error: 'activeInterval must be at least 10 seconds' });
+      }
+      if (idleInterval !== undefined && idleInterval < 10) {
+        return res.status(400).json({ error: 'idleInterval must be at least 10 seconds' });
+      }
+
+      // Check if device exists and is owned by user
+      const existingDevice = await prisma.device.findFirst({
+        where: { id, userId },
+      });
+
+      if (!existingDevice) {
+        return res.status(404).json({ error: 'Device not found or not owned by user' });
+      }
+
+      if (existingDevice.type !== 'GPS_TRACKER') {
+        return res.status(400).json({ error: 'Device is not a GPS tracker' });
+      }
+
+      const updateData: { activeInterval?: number; idleInterval?: number } = {};
+      if (activeInterval !== undefined) updateData.activeInterval = activeInterval;
+      if (idleInterval !== undefined) updateData.idleInterval = idleInterval;
+
+      const device = await prisma.device.update({
+        where: { id },
+        data: updateData,
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          activeInterval: true,
+          idleInterval: true,
+          currentInterval: true,
+        },
+      });
+
+      res.json(device);
+    } catch (error) {
+      console.error('Error updating interval settings:', error);
+      res.status(500).json({ error: 'Failed to update interval settings' });
     }
   }
 }

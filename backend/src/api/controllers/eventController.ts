@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
 import { notifyUsersAboutNewEvent } from '../../services/areaEventNotificationService';
+import { updateDeviceIntervalBasedOnEvents } from '../../services/deviceCommandService';
 
 export class EventController {
   static async createEvent(req: AuthRequest, res: Response) {
@@ -115,6 +116,13 @@ export class EventController {
       notifyUsersAboutNewEvent(event).catch((err) => {
         console.error('Error notifying about new event:', err);
       });
+
+      // Update GPS device interval if event has a GPS tracker attached
+      if (deviceId) {
+        updateDeviceIntervalBasedOnEvents(deviceId).catch((err) => {
+          console.error('Error updating device interval:', err);
+        });
+      }
 
       res.json(event);
     } catch (error: any) {
@@ -243,6 +251,13 @@ export class EventController {
         },
       });
 
+      // Update GPS device interval when event status changes (especially when closed)
+      if (status && existingEvent.deviceId) {
+        updateDeviceIntervalBasedOnEvents(existingEvent.deviceId).catch((err) => {
+          console.error('Error updating device interval:', err);
+        });
+      }
+
       res.json(event);
     } catch (error) {
       console.error('Error updating event:', error);
@@ -266,9 +281,19 @@ export class EventController {
         return res.status(404).json({ error: 'Event not found' });
       }
 
+      // Save deviceId before deletion for interval recalculation
+      const deviceIdForInterval = event.deviceId;
+
       await prisma.event.delete({
         where: { id },
       });
+
+      // Update GPS device interval after event deletion
+      if (deviceIdForInterval) {
+        updateDeviceIntervalBasedOnEvents(deviceIdForInterval).catch((err) => {
+          console.error('Error updating device interval:', err);
+        });
+      }
 
       res.json({ message: 'Event deleted successfully' });
     } catch (error) {
