@@ -11,8 +11,13 @@ export class MessageController {
   // Create or get conversation (for urgent events OR direct messages between users)
   static async getOrCreateConversation(req: AuthRequest, res: Response) {
     try {
-      const userId = req.userId!;
+      const userId = req.userId;
       const { eventId, otherUserId } = req.body;
+
+      // Validate userId from auth token
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
 
       if (!otherUserId) {
         return res.status(400).json({ error: 'Other user ID is required' });
@@ -28,10 +33,7 @@ export class MessageController {
         return res.status(404).json({ error: 'Other user not found' });
       }
 
-      // Prevent user from messaging themselves
-      if (userId === otherUserId) {
-        return res.status(400).json({ error: 'Cannot create conversation with yourself' });
-      }
+      // Allow self-conversations (like "Saved Messages" for notes)
 
       // If eventId is provided, verify event exists and is urgent
       if (eventId) {
@@ -112,7 +114,7 @@ export class MessageController {
         try {
           conversation = await prisma.conversation.create({
             data: {
-              eventId: eventId || null,
+              ...(eventId && { eventId }),
               isGroupChat: false,
               participants: {
                 create: [
@@ -202,8 +204,16 @@ export class MessageController {
       }
 
       res.json(conversation);
-    } catch (error) {
-      console.error('Error creating/getting conversation:', error);
+    } catch (error: any) {
+      console.error('Error creating/getting conversation:', {
+        message: error.message,
+        code: error.code,
+        meta: error.meta,
+        stack: error.stack,
+        userId,
+        otherUserId: req.body.otherUserId,
+        eventId: req.body.eventId,
+      });
       res.status(500).json({ error: 'Failed to create/get conversation' });
     }
   }

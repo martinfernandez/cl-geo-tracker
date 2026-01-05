@@ -220,7 +220,7 @@ export class DeviceController {
           lockLongitude: lastPosition.longitude,
           lockRadius: radius,
           lockedAt: new Date(),
-          lastAlertAt: null, // Reset alert time
+          lastAlertAt: new Date(), // Set to now to skip first alert (cooldown prevents immediate false alerts)
         },
         include: {
           positions: {
