@@ -1,7 +1,7 @@
 import multer from 'multer';
-import multerS3 from 'multer-s3';
-import { S3Client } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import path from 'path';
+import fs from 'fs';
 import { Request } from 'express';
 
 // Check if S3 is configured
@@ -18,31 +18,6 @@ const s3Client = isS3Configured
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    })
-  : null;
-
-// Local storage fallback
-const localStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/events');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-// S3 storage
-const s3Storage = s3Client
-  ? multerS3({
-      s3: s3Client,
-      bucket: process.env.AWS_S3_BUCKET!,
-      contentType: multerS3.AUTO_CONTENT_TYPE,
-      key: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const filename = `events/${uniqueSuffix}${path.extname(file.originalname)}`;
-        cb(null, filename);
       },
     })
   : null;
@@ -65,21 +40,54 @@ const fileFilter = (
   }
 };
 
-// Use S3 if configured, otherwise fallback to local storage
-const storage = isS3Configured && s3Storage ? s3Storage : localStorage;
+// Use memory storage for compression before upload
+const memoryStorage = multer.memoryStorage();
 
 if (isS3Configured) {
-  console.log('[Upload] Using S3 storage:', process.env.AWS_S3_BUCKET);
+  console.log('[Upload] Using S3 storage with compression:', process.env.AWS_S3_BUCKET);
 } else {
-  console.log('[Upload] Using local storage (S3 not configured)');
+  console.log('[Upload] Using local storage with compression');
 }
 
 export const upload = multer({
-  storage,
+  storage: memoryStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter,
 });
 
-export { isS3Configured };
+// Upload buffer to S3
+export async function uploadToS3(buffer: Buffer, key: string, mimetype: string): Promise<string> {
+  if (!s3Client) {
+    throw new Error('S3 client not configured');
+  }
+
+  const command = new PutObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET!,
+    Key: key,
+    Body: buffer,
+    ContentType: mimetype,
+  });
+
+  await s3Client.send(command);
+
+  return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+}
+
+// Save buffer to local file
+export async function saveToLocal(buffer: Buffer, filename: string): Promise<string> {
+  const uploadDir = 'uploads/events';
+
+  // Ensure directory exists
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  const filepath = path.join(uploadDir, filename);
+  fs.writeFileSync(filepath, buffer);
+
+  return `/uploads/events/${filename}`;
+}
+
+export { isS3Configured, s3Client };

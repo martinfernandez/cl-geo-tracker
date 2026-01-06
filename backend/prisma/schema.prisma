@@ -12,6 +12,7 @@ model User {
   email                   String             @unique
   password                String
   name                    String
+  imageUrl                String?            // Profile photo URL (S3)
   areaOfInterestLatitude  Float?
   areaOfInterestLongitude Float?
   areaOfInterestRadius    Float?             @default(5000) // meters, max 10000
@@ -387,6 +388,7 @@ model Group {
   id           String            @id @default(uuid())
   name         String
   description  String?
+  imageUrl     String?           // Group photo URL (S3)
   creatorId    String
   creator      User              @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   members      GroupMembership[]

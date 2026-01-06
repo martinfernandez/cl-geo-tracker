@@ -309,7 +309,11 @@ export class UserController {
       const userId = (req as any).userId;
       const { token } = req.body;
 
+      console.log(`[PUSH TOKEN] Received request to register push token for user ${userId}`);
+      console.log(`[PUSH TOKEN] Token received: ${token ? token.substring(0, 30) + '...' : 'null/undefined'}`);
+
       if (!token) {
+        console.log(`[PUSH TOKEN] No token provided, returning 400`);
         return res.status(400).json({ error: 'Push token is required' });
       }
 
@@ -324,9 +328,10 @@ export class UserController {
         },
       });
 
+      console.log(`[PUSH TOKEN] Successfully registered push token for user ${userId}`);
       res.json({ success: true, token: user.expoPushToken });
     } catch (error) {
-      console.error('Error registering push token:', error);
+      console.error('[PUSH TOKEN] Error registering push token:', error);
       res.status(500).json({ error: 'Failed to register push token' });
     }
   }

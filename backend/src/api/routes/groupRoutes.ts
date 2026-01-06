@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { GroupController } from '../controllers/groupController';
 import { GroupInvitationController } from '../controllers/groupInvitationController';
 import { PhoneLocationController } from '../controllers/phoneLocationController';
+import { UploadController } from '../controllers/uploadController';
 import { authMiddleware } from '../../middleware/auth';
+import { upload } from '../../middleware/upload';
 
 export const groupRouter = Router();
 
@@ -16,6 +18,9 @@ groupRouter.get('/admin-groups', GroupController.getMyAdminGroups);
 groupRouter.get('/:id', GroupController.getById);
 groupRouter.put('/:id', GroupController.update);
 groupRouter.delete('/:id', GroupController.delete);
+
+// Group image upload
+groupRouter.put('/:groupId/image', upload.single('image'), UploadController.uploadGroupImage);
 
 // Group membership
 groupRouter.post('/:id/leave', GroupController.leave);

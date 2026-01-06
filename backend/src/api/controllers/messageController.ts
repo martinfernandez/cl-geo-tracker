@@ -210,7 +210,7 @@ export class MessageController {
         code: error.code,
         meta: error.meta,
         stack: error.stack,
-        userId,
+        userId: req.userId,
         otherUserId: req.body.otherUserId,
         eventId: req.body.eventId,
       });
