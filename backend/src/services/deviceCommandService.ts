@@ -216,14 +216,22 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       select: {
         id: true,
         imei: true,
+        userId: true,
         activeInterval: true,
         idleInterval: true,
         currentInterval: true,
+        isConfigured: true,
       },
     });
 
     if (!device) {
       console.log(`[DeviceCommandService] No device found for IMEI ${imei}`);
+      return;
+    }
+
+    // Only configure devices that have an owner
+    if (!device.userId) {
+      console.log(`[DeviceCommandService] Device ${imei} has no owner, skipping configuration`);
       return;
     }
 
@@ -237,12 +245,25 @@ export async function onDeviceConnected(imei: string): Promise<void> {
     });
 
     const targetInterval = activeRealTimeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    const isFirstTimeConfig = !device.isConfigured;
 
     // Small delay to ensure device is fully initialized
     setTimeout(async () => {
+      // If first time configuration, send SLEEP OFF command
+      if (isFirstTimeConfig) {
+        console.log(`[DeviceCommandService] Device ${imei} first time config - disabling sleep mode`);
+
+        const sleepSerialNumber = getNextSerialNumber();
+        const sleepCommandBuffer = GPS103Parser.generateSleepCommand(false, sleepSerialNumber);
+        sendCommandToDevice(imei, sleepCommandBuffer);
+
+        // Wait a bit between commands
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
       console.log(
         `[DeviceCommandService] Device ${imei} connected, setting interval to ${targetInterval}s ` +
-        `(${activeRealTimeEventCount} active real-time events)`
+        `(${activeRealTimeEventCount} active real-time events, firstTimeConfig: ${isFirstTimeConfig})`
       );
 
       const serialNumber = getNextSerialNumber();
@@ -252,7 +273,10 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       if (sent) {
         await prisma.device.update({
           where: { imei },
-          data: { currentInterval: targetInterval },
+          data: {
+            currentInterval: targetInterval,
+            isConfigured: true,
+          },
         });
       }
     }, 2000); // 2 second delay to let device settle

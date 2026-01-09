@@ -89,8 +89,9 @@ model Device {
 
   // GPS reporting interval settings (for JX10 devices)
   activeInterval  Int      @default(30)   // seconds - interval when device has active event
-  idleInterval    Int      @default(600)  // seconds - interval when no active events (10 min)
+  idleInterval    Int      @default(180)  // seconds - interval when no active events (3 min)
   currentInterval Int?                    // current configured interval on device
+  isConfigured    Boolean  @default(false) // true after initial TCP config (SLEEP OFF + interval)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
