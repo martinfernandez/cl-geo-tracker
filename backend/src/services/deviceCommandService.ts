@@ -172,23 +172,24 @@ export async function updateDeviceIntervalBasedOnEvents(deviceId: string): Promi
       return;
     }
 
-    // Check if device has any active events
-    const activeEventCount = await prisma.event.count({
+    // Check if device has any active events with real-time tracking enabled
+    const activeRealTimeEventCount = await prisma.event.count({
       where: {
         deviceId,
         status: 'IN_PROGRESS',
+        realTimeTracking: true,
       },
     });
 
-    // Determine target interval
-    const targetInterval = activeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    // Determine target interval - only use active interval if there are real-time tracking events
+    const targetInterval = activeRealTimeEventCount > 0 ? device.activeInterval : device.idleInterval;
 
     // Only send command if interval needs to change
     if (device.currentInterval !== targetInterval) {
       console.log(
         `[DeviceCommandService] Updating device ${device.imei} interval: ` +
         `${device.currentInterval ?? 'unknown'}s -> ${targetInterval}s ` +
-        `(${activeEventCount} active events)`
+        `(${activeRealTimeEventCount} active real-time events)`
       );
 
       await setDeviceInterval(deviceId, targetInterval);
@@ -215,9 +216,11 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       select: {
         id: true,
         imei: true,
+        userId: true,
         activeInterval: true,
         idleInterval: true,
         currentInterval: true,
+        isConfigured: true,
       },
     });
 
@@ -226,22 +229,41 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       return;
     }
 
-    // Check active events to determine correct interval
-    const activeEventCount = await prisma.event.count({
+    // Only configure devices that have an owner
+    if (!device.userId) {
+      console.log(`[DeviceCommandService] Device ${imei} has no owner, skipping configuration`);
+      return;
+    }
+
+    // Check active events with real-time tracking to determine correct interval
+    const activeRealTimeEventCount = await prisma.event.count({
       where: {
         deviceId: device.id,
         status: 'IN_PROGRESS',
+        realTimeTracking: true,
       },
     });
 
-    const targetInterval = activeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    const targetInterval = activeRealTimeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    const isFirstTimeConfig = !device.isConfigured;
 
-    // Always send interval command on connect to ensure device is in sync
     // Small delay to ensure device is fully initialized
     setTimeout(async () => {
+      // If first time configuration, send SLEEP OFF command
+      if (isFirstTimeConfig) {
+        console.log(`[DeviceCommandService] Device ${imei} first time config - disabling sleep mode`);
+
+        const sleepSerialNumber = getNextSerialNumber();
+        const sleepCommandBuffer = GPS103Parser.generateSleepCommand(false, sleepSerialNumber);
+        sendCommandToDevice(imei, sleepCommandBuffer);
+
+        // Wait a bit between commands
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
       console.log(
         `[DeviceCommandService] Device ${imei} connected, setting interval to ${targetInterval}s ` +
-        `(${activeEventCount} active events)`
+        `(${activeRealTimeEventCount} active real-time events, firstTimeConfig: ${isFirstTimeConfig})`
       );
 
       const serialNumber = getNextSerialNumber();
@@ -251,7 +273,10 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       if (sent) {
         await prisma.device.update({
           where: { imei },
-          data: { currentInterval: targetInterval },
+          data: {
+            currentInterval: targetInterval,
+            isConfigured: true, // Mark device as configured
+          },
         });
       }
     }, 2000); // 2 second delay to let device settle
