@@ -403,4 +403,21 @@ export class GPS103Parser {
     console.log(`[GPS103] Generating TIMER command: ${command}`);
     return this.generateServerCommand(command, serialNumber);
   }
+
+  /**
+   * Generate SLEEP command to enable or disable sleep mode on the device
+   * When sleep mode is ON, the device stops reporting when stationary
+   * When sleep mode is OFF, the device always reports at the configured interval
+   *
+   * @param enable - true to enable sleep mode, false to disable it
+   * @param serialNumber - Packet serial number
+   * @returns Buffer containing the complete command packet
+   */
+  static generateSleepCommand(enable: boolean, serialNumber: number): Buffer {
+    // JX10/GT06 format: SLEEP,ON# or SLEEP,OFF#
+    const command = `SLEEP,${enable ? 'ON' : 'OFF'}#`;
+
+    console.log(`[GPS103] Generating SLEEP command: ${command}`);
+    return this.generateServerCommand(command, serialNumber);
+  }
 }
