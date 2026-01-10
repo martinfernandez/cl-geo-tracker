@@ -15,6 +15,7 @@ import {
 import { SkeletonImage } from './SkeletonImage';
 import { FadeInView } from './FadeInView';
 import { Ionicons } from '@expo/vector-icons';
+import UserAvatar from './UserAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, G, Rect, Defs, Pattern } from 'react-native-svg';
 import { Event, reactionApi } from '../services/api';
@@ -399,6 +400,14 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   FIRE: 'Incendio',
 };
 
+const EVENT_TYPE_ICONS: Record<string, string> = {
+  GENERAL: 'megaphone-outline',
+  THEFT: 'warning-outline',
+  LOST: 'search-outline',
+  ACCIDENT: 'car-outline',
+  FIRE: 'flame-outline',
+};
+
 // Format relative time like Instagram/social feeds
 const formatRelativeTime = (dateString: string): string => {
   const now = new Date();
@@ -662,6 +671,7 @@ export default function SlidingEventFeed({
   const renderEventCard = ({ item, index }: { item: EventWithCounts; index: number }) => {
     // Only show urgent styling if event is urgent AND not closed
     const isActiveUrgent = (item as any).isUrgent && item.status !== 'CLOSED';
+    const eventUser = (item as any).user;
 
     return (
       <FadeInView delay={index * 50} duration={350}>
@@ -674,7 +684,44 @@ export default function SlidingEventFeed({
         onPress={() => onEventPress?.(item.id)}
         activeOpacity={0.85}
       >
-        {/* Image at the top - full width */}
+        {/* User Header - Instagram style */}
+        {eventUser && (
+          <View style={[styles.userHeader, { borderBottomColor: theme.glass.border }]}>
+            <View style={styles.userHeaderLeft}>
+              <UserAvatar
+                imageUrl={eventUser.imageUrl}
+                name={eventUser.name}
+                size={36}
+                backgroundColor={EVENT_TYPE_COLORS[item.type]}
+              />
+              <View style={styles.userHeaderInfo}>
+                <Text style={[styles.userHeaderName, { color: theme.text }]} numberOfLines={1}>
+                  {eventUser.name}
+                </Text>
+                <View style={styles.userHeaderBadges}>
+                  {isActiveUrgent && <UrgentPulsingDot color={theme.error.main} />}
+                  <View style={[styles.typeBadgeSmall, { backgroundColor: EVENT_TYPE_COLORS[item.type] }]}>
+                    <Ionicons name={EVENT_TYPE_ICONS[item.type] as any || 'megaphone-outline'} size={10} color="#fff" />
+                    <Text style={styles.typeBadgeSmallText}>{EVENT_TYPE_LABELS[item.type]}</Text>
+                  </View>
+                  {item.status === 'CLOSED' && (
+                    <View style={[styles.closedBadgeSmall, { backgroundColor: theme.error.main }]}>
+                      <Text style={styles.closedBadgeSmallText}>Cerrado</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+            <View style={styles.userHeaderRight}>
+              <Text style={[styles.timeTextSmall, { color: theme.textTertiary }]}>
+                {formatRelativeTime(item.createdAt)}
+              </Text>
+              <Ionicons name="ellipsis-vertical" size={18} color={theme.textTertiary} />
+            </View>
+          </View>
+        )}
+
+        {/* Image - full width */}
         {item.imageUrl && (
           <View style={styles.imageContainer}>
             <SkeletonImage
@@ -684,61 +731,11 @@ export default function SlidingEventFeed({
               transition={200}
               cachePolicy="memory-disk"
             />
-            {/* Gradient overlay for better text readability */}
-            <View style={styles.imageOverlay} />
-            {/* Time badge on image */}
-            <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
-              <Ionicons name="time-outline" size={12} color="#fff" />
-              <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
-            </View>
           </View>
         )}
 
         {/* Card content */}
         <View style={styles.cardContent}>
-          {/* Header row: badges left, time right (if no image) */}
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderLeft}>
-              <View
-                style={[
-                  styles.typeBadge,
-                  { backgroundColor: EVENT_TYPE_COLORS[item.type] },
-                ]}
-              >
-                <Text style={styles.typeBadgeText}>
-                  {EVENT_TYPE_LABELS[item.type]}
-                </Text>
-              </View>
-              {/* Status badge */}
-              <View
-                style={[
-                  styles.statusBadge,
-                  { backgroundColor: staticColors.success.subtle },
-                  item.status === 'CLOSED' && { backgroundColor: staticColors.error.main },
-                ]}
-              >
-                <Text style={[
-                  styles.statusBadgeText,
-                  { color: staticColors.success.dark },
-                  item.status === 'CLOSED' && { color: '#fff' },
-                ]}>
-                  {item.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
-                </Text>
-              </View>
-              {isActiveUrgent && <UrgentPulsingDot color={theme.error.main} />}
-              {item.status === 'CLOSED' && (
-                <View style={styles.closedStaticDot} />
-              )}
-            </View>
-            {/* Time on the right if no image */}
-            {!item.imageUrl && (
-              <View style={styles.timeContainer}>
-                <Ionicons name="time-outline" size={12} color={theme.textTertiary} />
-                <Text style={[styles.timeText, { color: theme.textTertiary }]}>{formatRelativeTime(item.createdAt)}</Text>
-              </View>
-            )}
-          </View>
-
           {/* Description */}
           <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
             {item.description}
@@ -937,97 +934,75 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: 'hidden',
   },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  userHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  userHeaderInfo: {
+    flex: 1,
+  },
+  userHeaderName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  userHeaderBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  userHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  typeBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  typeBadgeSmallText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  closedBadgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  closedBadgeSmallText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  timeTextSmall: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
   imageContainer: {
     position: 'relative',
     width: '100%',
   },
   eventImage: {
     width: '100%',
-    height: 180,
+    height: 200,
     backgroundColor: 'rgba(139, 92, 246, 0.12)',
-  },
-  imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    backgroundColor: 'transparent',
-    // Gradient effect using multiple layers would be better with LinearGradient
-  },
-  timeBadgeOnImage: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusBadgeOnImage: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  timeBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
   },
   cardContent: {
     padding: 14,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  cardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-    flexWrap: 'wrap',
-  },
-  typeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  typeBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-  },
-  statusBadgeClosed: {
-    // Colors applied dynamically
-  },
-  statusBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: '500',
   },
   description: {
     fontSize: 15,

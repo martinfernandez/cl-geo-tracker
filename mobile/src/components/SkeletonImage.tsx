@@ -8,7 +8,6 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Image, ImageSource, ImageContentFit } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
 interface SkeletonImageProps {
@@ -26,63 +25,101 @@ export function SkeletonImage({
   transition = 200,
   cachePolicy = 'memory-disk',
 }: SkeletonImageProps) {
-  const { theme, isDark } = useTheme();
+  const { isDark } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const pulseAnim = useRef(new Animated.Value(0.6)).current;
+  const pulseAnim = useRef(new Animated.Value(0.3)).current;
+  const glowAnim = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
     if (isLoading || hasError) {
+      // Subtle pulse animation for the logo
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
+            toValue: 0.6,
+            duration: 1200,
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
-            toValue: 0.4,
-            duration: 1000,
+            toValue: 0.3,
+            duration: 1200,
             useNativeDriver: true,
           }),
         ])
       );
+
+      // Glow animation for the background
+      const glow = Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 0.8,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0.5,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
       pulse.start();
-      return () => pulse.stop();
+      glow.start();
+
+      return () => {
+        pulse.stop();
+        glow.stop();
+      };
     }
-  }, [isLoading, hasError, pulseAnim]);
+  }, [isLoading, hasError, pulseAnim, glowAnim]);
 
   const containerStyle: ViewStyle = {
     width: (style as any)?.width || '100%',
     height: (style as any)?.height || 180,
   };
 
-  const skeletonBgColor = isDark ? '#2C2C2E' : '#F2F2F7';
-  const iconColor = isDark ? '#48484A' : '#C7C7CC';
+  // Colors for dark and light modes
+  const bgColor = isDark ? '#1C1C1E' : '#F2F2F7';
+  const gradientColor = isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.08)';
 
   return (
     <View style={[styles.container, containerStyle]}>
       {/* Skeleton placeholder - visible while loading or on error */}
       {(isLoading || hasError) && (
-        <Animated.View
+        <View
           style={[
             styles.skeleton,
             containerStyle,
-            {
-              opacity: pulseAnim,
-              backgroundColor: skeletonBgColor,
-            },
+            { backgroundColor: bgColor },
           ]}
         >
-          {/* Simple icon placeholder */}
-          <View style={styles.iconContainer}>
-            <Ionicons
-              name={hasError ? "image-outline" : "image"}
-              size={40}
-              color={iconColor}
+          {/* Subtle gradient glow effect */}
+          <Animated.View
+            style={[
+              styles.glowEffect,
+              {
+                backgroundColor: gradientColor,
+                opacity: glowAnim,
+              },
+            ]}
+          />
+
+          {/* App logo centered with subtle animation */}
+          <Animated.View
+            style={[
+              styles.logoContainer,
+              { opacity: pulseAnim },
+            ]}
+          >
+            <RNImage
+              source={require('../../assets/icon.png')}
+              style={styles.logo}
+              resizeMode="contain"
             />
-          </View>
-        </Animated.View>
+          </Animated.View>
+        </View>
       )}
 
       {/* Actual image */}
@@ -121,9 +158,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 1,
   },
-  iconContainer: {
+  glowEffect: {
+    position: 'absolute',
+    top: '25%',
+    left: '25%',
+    right: '25%',
+    bottom: '25%',
+    borderRadius: 100,
+  },
+  logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logo: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
   },
   image: {
     position: 'absolute',
