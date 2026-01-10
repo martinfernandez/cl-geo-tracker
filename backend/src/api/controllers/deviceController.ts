@@ -20,7 +20,7 @@ export class DeviceController {
         },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           },
         },
@@ -47,7 +47,7 @@ export class DeviceController {
         },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 10,
           },
         },
@@ -197,7 +197,7 @@ export class DeviceController {
         where: { id, userId },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           },
         },
@@ -225,7 +225,7 @@ export class DeviceController {
         },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           },
         },
@@ -265,7 +265,7 @@ export class DeviceController {
         },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           },
         },
@@ -303,7 +303,7 @@ export class DeviceController {
         data: { lockRadius: radius },
         include: {
           positions: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           },
         },

@@ -485,7 +485,7 @@ export class GroupController {
           },
           positions: {
             take: 1,
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
           },
         },
       });
@@ -505,7 +505,7 @@ export class GroupController {
           },
           positions: {
             take: 1,
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
           },
         },
       });
@@ -660,7 +660,7 @@ export class GroupController {
           include: {
             positions: {
               take: 1,
-              orderBy: { timestamp: 'desc' },
+              orderBy: { createdAt: 'desc' },
             },
           },
         });
@@ -694,7 +694,7 @@ export class GroupController {
           include: {
             positions: {
               take: 1,
-              orderBy: { timestamp: 'desc' },
+              orderBy: { createdAt: 'desc' },
             },
           },
         });

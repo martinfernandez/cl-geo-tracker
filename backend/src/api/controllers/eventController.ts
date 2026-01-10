@@ -101,6 +101,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
           group: {
@@ -160,6 +161,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
           group: {
@@ -198,6 +200,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
         },
@@ -246,6 +249,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
         },
@@ -364,6 +368,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
           _count: {
@@ -429,6 +434,7 @@ export class EventController {
               id: true,
               name: true,
               email: true,
+              imageUrl: true,
             },
           },
           _count: {

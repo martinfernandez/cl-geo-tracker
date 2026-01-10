@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/database';
 import { AuthRequest } from '../../middleware/auth';
 import { sendPushNotification } from '../../services/pushNotificationService';
+import { sendToUser } from '../../websocket/wsServer';
 import crypto from 'crypto';
 
 export class QRController {
@@ -186,7 +187,7 @@ export class QRController {
         },
         include: {
           owner: {
-            select: { expoPushToken: true },
+            select: { id: true, expoPushToken: true },
           },
           device: {
             select: { name: true },
@@ -204,6 +205,18 @@ export class QRController {
           isOwner: false,
           content: content.trim(),
         },
+      });
+
+      // Send WebSocket notification to owner for real-time update
+      sendToUser(chat.owner.id, {
+        type: 'new_message',
+        foundChatId: chat.id,
+        chatId: chat.id,
+        id: message.id,
+        content: message.content,
+        createdAt: message.createdAt,
+        isOwner: false,
+        finderName: chat.finderName,
       });
 
       // Send push notification to owner
@@ -349,6 +362,11 @@ export class QRController {
           ownerId: userId,
           status: 'ACTIVE',
         },
+        include: {
+          finder: {
+            select: { id: true, expoPushToken: true },
+          },
+        },
       });
 
       if (!chat) {
@@ -368,6 +386,32 @@ export class QRController {
         where: { id: chatId },
         data: { updatedAt: new Date() },
       });
+
+      // Send WebSocket notification to finder if they are a registered user
+      if (chat.finderId) {
+        sendToUser(chat.finderId, {
+          type: 'new_message',
+          foundChatId: chat.id,
+          chatId: chat.id,
+          id: message.id,
+          content: message.content,
+          createdAt: message.createdAt,
+          isOwner: true,
+        });
+
+        // Also send push notification to finder
+        if (chat.finder?.expoPushToken) {
+          await sendPushNotification(
+            chat.finder.expoPushToken,
+            'Respuesta del dueño',
+            content.trim().substring(0, 50) + (content.length > 50 ? '...' : ''),
+            {
+              type: 'FOUND_OBJECT_MESSAGE',
+              chatId: chat.id,
+            }
+          );
+        }
+      }
 
       res.status(201).json({
         id: message.id,
@@ -599,7 +643,7 @@ export class QRController {
         },
         include: {
           owner: {
-            select: { expoPushToken: true },
+            select: { id: true, expoPushToken: true },
           },
           device: {
             select: { name: true },
@@ -617,6 +661,18 @@ export class QRController {
           isOwner: false,
           content: content.trim(),
         },
+      });
+
+      // Send WebSocket notification to owner for real-time update
+      sendToUser(chat.owner.id, {
+        type: 'new_message',
+        foundChatId: chat.id,
+        chatId: chat.id,
+        id: message.id,
+        content: message.content,
+        createdAt: message.createdAt,
+        isOwner: false,
+        finderName: chat.finderName,
       });
 
       // Send push notification to owner

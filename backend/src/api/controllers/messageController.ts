@@ -62,65 +62,117 @@ export class MessageController {
       // For direct: match null eventId + participants
       console.log('[MessageController] Looking for conversation:', { eventId: eventId || null, userId, otherUserId });
 
-      let conversation = await prisma.conversation.findFirst({
-        where: {
-          eventId: eventId || null,
-          isGroupChat: false,
-          AND: [
-            {
+      const isSelfConversation = userId === otherUserId;
+
+      let conversation;
+
+      if (isSelfConversation) {
+        // For self-conversations, find one where the user appears exactly twice (or once in a self-convo)
+        // and there are no other participants
+        conversation = await prisma.conversation.findFirst({
+          where: {
+            eventId: eventId || null,
+            isGroupChat: false,
+            participants: {
+              every: {
+                userId: userId,
+              },
+            },
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+            event: {
+              select: {
+                id: true,
+                type: true,
+                description: true,
+                isUrgent: true,
+              },
+            },
+          },
+        });
+      } else {
+        // For regular 1-to-1 conversations, find one with exactly these two participants
+        conversation = await prisma.conversation.findFirst({
+          where: {
+            eventId: eventId || null,
+            isGroupChat: false,
+            AND: [
+              {
+                participants: {
+                  some: {
+                    userId: userId,
+                  },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    userId: otherUserId,
+                  },
+                },
+              },
+            ],
+            // Ensure it's not a self-conversation (where all participants are the same user)
+            NOT: {
               participants: {
-                some: {
+                every: {
                   userId: userId,
                 },
               },
             },
-            {
-              participants: {
-                some: {
-                  userId: otherUserId,
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
                 },
               },
             },
-          ],
-        },
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
+            event: {
+              select: {
+                id: true,
+                type: true,
+                description: true,
+                isUrgent: true,
               },
             },
           },
-          event: {
-            select: {
-              id: true,
-              type: true,
-              description: true,
-              isUrgent: true,
-            },
-          },
-        },
-      });
+        });
+      }
 
       console.log('[MessageController] Existing conversation found:', !!conversation);
 
       // Create conversation if it doesn't exist
       if (!conversation) {
-        console.log('[MessageController] Creating new conversation...');
+        console.log('[MessageController] Creating new conversation...', { isSelfConversation });
         try {
+          // For self-conversations, only create one participant entry
+          const participantsToCreate = isSelfConversation
+            ? [{ userId }]
+            : [{ userId }, { userId: otherUserId }];
+
           conversation = await prisma.conversation.create({
             data: {
               ...(eventId && { eventId }),
               isGroupChat: false,
               participants: {
-                create: [
-                  { userId },
-                  { userId: otherUserId },
-                ],
+                create: participantsToCreate,
               },
             },
             include: {
@@ -150,49 +202,93 @@ export class MessageController {
           // If creation fails due to unique constraint (race condition), try to find again
           if (createError.code === 'P2002') {
             console.log('[MessageController] Race condition detected, finding existing conversation...');
-            conversation = await prisma.conversation.findFirst({
-              where: {
-                eventId: eventId || null,
-                isGroupChat: false,
-                AND: [
-                  {
+
+            // Use the same query logic as above for the retry
+            if (isSelfConversation) {
+              conversation = await prisma.conversation.findFirst({
+                where: {
+                  eventId: eventId || null,
+                  isGroupChat: false,
+                  participants: {
+                    every: {
+                      userId: userId,
+                    },
+                  },
+                },
+                include: {
+                  participants: {
+                    include: {
+                      user: {
+                        select: {
+                          id: true,
+                          name: true,
+                          email: true,
+                        },
+                      },
+                    },
+                  },
+                  event: {
+                    select: {
+                      id: true,
+                      type: true,
+                      description: true,
+                      isUrgent: true,
+                    },
+                  },
+                },
+              });
+            } else {
+              conversation = await prisma.conversation.findFirst({
+                where: {
+                  eventId: eventId || null,
+                  isGroupChat: false,
+                  AND: [
+                    {
+                      participants: {
+                        some: {
+                          userId: userId,
+                        },
+                      },
+                    },
+                    {
+                      participants: {
+                        some: {
+                          userId: otherUserId,
+                        },
+                      },
+                    },
+                  ],
+                  NOT: {
                     participants: {
-                      some: {
+                      every: {
                         userId: userId,
                       },
                     },
                   },
-                  {
-                    participants: {
-                      some: {
-                        userId: otherUserId,
+                },
+                include: {
+                  participants: {
+                    include: {
+                      user: {
+                        select: {
+                          id: true,
+                          name: true,
+                          email: true,
+                        },
                       },
                     },
                   },
-                ],
-              },
-              include: {
-                participants: {
-                  include: {
-                    user: {
-                      select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                      },
+                  event: {
+                    select: {
+                      id: true,
+                      type: true,
+                      description: true,
+                      isUrgent: true,
                     },
                   },
                 },
-                event: {
-                  select: {
-                    id: true,
-                    type: true,
-                    description: true,
-                    isUrgent: true,
-                  },
-                },
-              },
-            });
+              });
+            }
 
             if (!conversation) {
               throw createError; // Re-throw if still not found
@@ -240,6 +336,7 @@ export class MessageController {
                 select: {
                   id: true,
                   name: true,
+                  imageUrl: true,
                 },
               },
               participants: {
@@ -252,6 +349,7 @@ export class MessageController {
                       id: true,
                       name: true,
                       email: true,
+                      imageUrl: true,
                     },
                   },
                 },

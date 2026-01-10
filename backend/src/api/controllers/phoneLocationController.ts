@@ -45,7 +45,7 @@ export class PhoneLocationController {
         include: {
           positions: {
             take: 1,
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
           },
         },
       });
@@ -286,7 +286,7 @@ export class PhoneLocationController {
         include: {
           positions: {
             take: 1,
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
           },
         },
       });
@@ -359,7 +359,7 @@ export class PhoneLocationController {
 
       const positions = await prisma.phonePosition.findMany({
         where,
-        orderBy: { timestamp: 'desc' },
+        orderBy: { createdAt: 'desc' },
         take: Math.min(parseInt(limit as string), 1000),
       });
 

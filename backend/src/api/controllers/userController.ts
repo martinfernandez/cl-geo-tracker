@@ -37,6 +37,7 @@ export class UserController {
           id: user.id,
           email: user.email,
           name: user.name,
+          imageUrl: user.imageUrl,
         },
         token,
       });
@@ -75,6 +76,7 @@ export class UserController {
           id: user.id,
           email: user.email,
           name: user.name,
+          imageUrl: user.imageUrl,
         },
         token,
       });
@@ -161,6 +163,7 @@ export class UserController {
           id: true,
           name: true,
           email: true,
+          imageUrl: true,
           showName: true,
           showEmail: true,
           showPublicEvents: true,
@@ -177,6 +180,7 @@ export class UserController {
         id: user.id,
         name: user.showName ? user.name : 'Usuario Anónimo',
         email: user.showEmail ? user.email : undefined,
+        imageUrl: user.imageUrl,
         showName: user.showName,
         showEmail: user.showEmail,
         showPublicEvents: user.showPublicEvents,
