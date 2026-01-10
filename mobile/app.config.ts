@@ -17,6 +17,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     ios: {
       supportsTablet: true,
+      buildNumber: '2',
       bundleIdentifier: environment === 'production'
         ? 'com.martinfernandez.peektracker'
         : `com.martinfernandez.peektracker.${environment}`,
