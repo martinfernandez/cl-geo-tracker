@@ -11,6 +11,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (updates: Partial<User>) => void;
   isAuthenticated: boolean;
 }
 
@@ -117,8 +118,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error('WebSocket connection failed:', err);
       });
     }
-    // Register for push notifications after successful login
-    await registerForPushNotifications();
+    // Register for push notifications after successful login (non-blocking)
+    registerForPushNotifications().catch((err) => {
+      console.warn('Push notification registration failed:', err);
+    });
   };
 
   const register = async (email: string, password: string, name: string) => {
@@ -130,8 +133,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error('WebSocket connection failed:', err);
       });
     }
-    // Register for push notifications after successful registration
-    await registerForPushNotifications();
+    // Register for push notifications after successful registration (non-blocking)
+    registerForPushNotifications().catch((err) => {
+      console.warn('Push notification registration failed:', err);
+    });
   };
 
   const logout = async () => {
@@ -143,6 +148,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser(null);
   };
 
+  const updateUser = (updates: Partial<User>) => {
+    setUser((prev) => prev ? { ...prev, ...updates } : null);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -151,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         login,
         register,
         logout,
+        updateUser,
         isAuthenticated: !!user,
       }}
     >

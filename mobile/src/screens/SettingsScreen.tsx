@@ -8,13 +8,18 @@ import {
   ScrollView,
   Switch,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { processImageForUpload } from '../utils/imageUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { useOnboarding, UserProfileType, TutorialType } from '../contexts/OnboardingContext';
 import { useTheme } from '../contexts/ThemeContext';
 import AreaOfInterestPicker from '../components/AreaOfInterestPicker';
+import UserAvatar from '../components/UserAvatar';
 import { api } from '../services/api';
 
 const TUTORIAL_OPTIONS: Array<{
@@ -55,7 +60,7 @@ const TUTORIAL_OPTIONS: Array<{
 ];
 
 export default function SettingsScreen() {
-  const { logout, user } = useAuth();
+  const { logout, user, updateUser } = useAuth();
   const navigation = useNavigation<any>();
   const { theme, themeMode, setThemeMode, isDark } = useTheme();
   const { hasUnviewedTutorials, hasTutorialBeenViewed } = useOnboarding();
@@ -72,6 +77,10 @@ export default function SettingsScreen() {
   const [showName, setShowName] = useState(true);
   const [showEmail, setShowEmail] = useState(false);
   const [showPublicEvents, setShowPublicEvents] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Use imageUrl from user context
+  const profileImage = user?.imageUrl;
 
   useEffect(() => {
     loadUserProfile();
@@ -96,8 +105,58 @@ export default function SettingsScreen() {
       setShowName(response.data.showName ?? true);
       setShowEmail(response.data.showEmail ?? false);
       setShowPublicEvents(response.data.showPublicEvents ?? true);
+
+      // Load profile image into auth context if not already set
+      if (response.data.imageUrl && !user?.imageUrl) {
+        updateUser({ imageUrl: response.data.imageUrl });
+      }
     } catch (error) {
       console.error('Error loading profile:', error);
+    }
+  };
+
+  const handlePickProfileImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso requerido', 'Se necesita permiso para acceder a las fotos');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      try {
+        setUploadingImage(true);
+
+        // Resize image before upload (400x400 for avatars)
+        const processed = await processImageForUpload(result.assets[0].uri, 'AVATAR');
+        console.log('[Profile] Image resized:', processed.width, 'x', processed.height);
+
+        const formData = new FormData();
+        const filename = 'photo.jpg';
+        formData.append('image', {
+          uri: processed.uri,
+          type: 'image/jpeg',
+          name: filename,
+        } as any);
+
+        const response = await api.put('/users/profile/image', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        // Update user context with new image
+        updateUser({ imageUrl: response.data.imageUrl });
+        Alert.alert('Exito', 'Foto de perfil actualizada');
+      } catch (error) {
+        console.error('Error uploading profile image:', error);
+        Alert.alert('Error', 'No se pudo subir la imagen');
+      } finally {
+        setUploadingImage(false);
+      }
     }
   };
 
@@ -163,49 +222,55 @@ export default function SettingsScreen() {
   const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'U';
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text.primary }]}>Perfil</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Perfil</Text>
         <View style={styles.headerRight} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Profile Header */}
-        <View style={[styles.profileHeader, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
-          <View style={styles.avatarContainer}>
-            <View style={[styles.avatar, { backgroundColor: theme.primary.main }]}>
-              <Text style={styles.avatarText}>{userInitial}</Text>
+        <View style={[styles.profileHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <TouchableOpacity style={styles.avatarContainer} onPress={handlePickProfileImage} disabled={uploadingImage}>
+            <UserAvatar
+              imageUrl={profileImage}
+              name={user?.name}
+              size={100}
+            />
+            <View style={[styles.editAvatarButton, { backgroundColor: theme.secondary.main, borderColor: theme.surface }]}>
+              {uploadingImage ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="camera" size={16} color="#fff" />
+              )}
             </View>
-            <TouchableOpacity style={[styles.editAvatarButton, { backgroundColor: theme.secondary.main }]}>
-              <Ionicons name="camera" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.userName, { color: theme.text.primary }]}>{user?.name || 'Usuario'}</Text>
-          <Text style={[styles.userEmail, { color: theme.text.tertiary }]}>{user?.email}</Text>
+          </TouchableOpacity>
+          <Text style={[styles.userName, { color: theme.text }]}>{user?.name || 'Usuario'}</Text>
+          <Text style={[styles.userEmail, { color: theme.textTertiary }]}>{user?.email}</Text>
         </View>
 
         {/* Account Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text.tertiary }]}>Cuenta</Text>
-          <View style={[styles.sectionCard, { backgroundColor: theme.bg.primary }]}>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.glass.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>Cuenta</Text>
+          <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.accent.subtle }]}>
                   <Ionicons name="person-outline" size={20} color={theme.accent.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Editar perfil</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Nombre, foto, informacion</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Editar perfil</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Nombre, foto, informacion</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -217,55 +282,55 @@ export default function SettingsScreen() {
                   <Ionicons name="location-outline" size={20} color={theme.info.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Area de interes</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Area de interes</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>
                     {areaOfInterest
                       ? `Radio: ${(areaOfInterest.radius / 1000).toFixed(1)} km`
                       : 'No configurada'}
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Privacy Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text.tertiary }]}>Privacidad</Text>
-          <View style={[styles.sectionCard, { backgroundColor: theme.bg.primary }]}>
-            <View style={[styles.switchItem, { borderBottomColor: theme.glass.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>Privacidad</Text>
+          <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
+            <View style={[styles.switchItem, { borderBottomColor: theme.border }]}>
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.warning.subtle }]}>
                   <Ionicons name="person-circle-outline" size={20} color={theme.warning.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Mostrar mi nombre</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Visible para otros usuarios</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Mostrar mi nombre</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Visible para otros usuarios</Text>
                 </View>
               </View>
               <Switch
                 value={showName}
                 onValueChange={handleToggleShowName}
-                trackColor={{ false: theme.glass.bgActive, true: theme.success.main }}
+                trackColor={{ false: isDark ? '#3A3A3C' : '#E5E5EA', true: theme.success.main }}
                 thumbColor="#fff"
               />
             </View>
 
-            <View style={[styles.switchItem, { borderBottomColor: theme.glass.border }]}>
+            <View style={[styles.switchItem, { borderBottomColor: theme.border }]}>
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.primary.subtle }]}>
                   <Ionicons name="mail-outline" size={20} color={theme.primary.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Mostrar mi email</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Visible en tu perfil publico</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Mostrar mi email</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Visible en tu perfil publico</Text>
                 </View>
               </View>
               <Switch
                 value={showEmail}
                 onValueChange={handleToggleShowEmail}
-                trackColor={{ false: theme.glass.bgActive, true: theme.success.main }}
+                trackColor={{ false: isDark ? '#3A3A3C' : '#E5E5EA', true: theme.success.main }}
                 thumbColor="#fff"
               />
             </View>
@@ -276,14 +341,14 @@ export default function SettingsScreen() {
                   <Ionicons name="megaphone-outline" size={20} color={theme.tertiary.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Eventos publicos</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Mostrar en mi perfil</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Eventos publicos</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Mostrar en mi perfil</Text>
                 </View>
               </View>
               <Switch
                 value={showPublicEvents}
                 onValueChange={handleToggleShowPublicEvents}
-                trackColor={{ false: theme.glass.bgActive, true: theme.success.main }}
+                trackColor={{ false: isDark ? '#3A3A3C' : '#E5E5EA', true: theme.success.main }}
                 thumbColor="#fff"
               />
             </View>
@@ -292,10 +357,10 @@ export default function SettingsScreen() {
 
         {/* Appearance Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text.tertiary }]}>Apariencia</Text>
-          <View style={[styles.sectionCard, { backgroundColor: theme.bg.primary }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>Apariencia</Text>
+          <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
             <TouchableOpacity
-              style={[styles.menuItem, { borderBottomColor: theme.glass.border }]}
+              style={[styles.menuItem, { borderBottomColor: theme.border }]}
               onPress={() => setThemeMode('system')}
             >
               <View style={styles.menuItemLeft}>
@@ -303,8 +368,8 @@ export default function SettingsScreen() {
                   <Ionicons name="phone-portrait-outline" size={20} color={theme.primary.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Seguir sistema</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Usa la configuracion del dispositivo</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Seguir sistema</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Usa la configuracion del dispositivo</Text>
                 </View>
               </View>
               {themeMode === 'system' && (
@@ -313,7 +378,7 @@ export default function SettingsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.menuItem, { borderBottomColor: theme.glass.border }]}
+              style={[styles.menuItem, { borderBottomColor: theme.border }]}
               onPress={() => setThemeMode('light')}
             >
               <View style={styles.menuItemLeft}>
@@ -321,8 +386,8 @@ export default function SettingsScreen() {
                   <Ionicons name="sunny-outline" size={20} color={theme.warning.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Modo claro</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Fondo blanco, texto oscuro</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Modo claro</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Fondo blanco, texto oscuro</Text>
                 </View>
               </View>
               {themeMode === 'light' && (
@@ -335,12 +400,12 @@ export default function SettingsScreen() {
               onPress={() => setThemeMode('dark')}
             >
               <View style={styles.menuItemLeft}>
-                <View style={[styles.menuIcon, { backgroundColor: isDark ? theme.glass.bgActive : '#263238' }]}>
+                <View style={[styles.menuIcon, { backgroundColor: isDark ? isDark ? '#3A3A3C' : '#E5E5EA' : '#263238' }]}>
                   <Ionicons name="moon-outline" size={20} color={isDark ? theme.secondary.light : '#B0BEC5'} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Modo oscuro</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Fondo oscuro, texto claro</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Modo oscuro</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Fondo oscuro, texto claro</Text>
                 </View>
               </View>
               {themeMode === 'dark' && (
@@ -352,32 +417,32 @@ export default function SettingsScreen() {
 
         {/* General Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text.tertiary }]}>General</Text>
-          <View style={[styles.sectionCard, { backgroundColor: theme.bg.primary }]}>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.glass.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>General</Text>
+          <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.warning.subtle }]}>
                   <Ionicons name="notifications-outline" size={20} color={theme.warning.dark} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Notificaciones</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Push, sonidos, alertas</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Notificaciones</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Push, sonidos, alertas</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.glass.border }]}>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.primary.subtle }]}>
                   <Ionicons name="help-circle-outline" size={20} color={theme.primary.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Ayuda</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Centro de ayuda, contacto</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Ayuda</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Centro de ayuda, contacto</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}>
@@ -386,11 +451,11 @@ export default function SettingsScreen() {
                   <Ionicons name="information-circle-outline" size={20} color={theme.secondary.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>Acerca de</Text>
-                  <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>Version, terminos, licencias</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Acerca de</Text>
+                  <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>Version, terminos, licencias</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+              <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
           </View>
         </View>
@@ -398,7 +463,7 @@ export default function SettingsScreen() {
         {/* Tutorials Section */}
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
-            <Text style={[styles.sectionTitle, { color: theme.text.tertiary }]}>Tutoriales</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>Tutoriales</Text>
             {hasUnviewedTutorials && (
               <View style={[styles.newBadge, { backgroundColor: theme.error.main }]}>
                 <Text style={styles.newBadgeText}>Nuevo</Text>
@@ -410,20 +475,20 @@ export default function SettingsScreen() {
           {hasUnviewedTutorials && (
             <View style={[styles.tutorialBanner, { backgroundColor: theme.primary.subtle }]}>
               <View style={styles.tutorialBannerIcon}>
-                <Ionicons name="school" size={24} color={theme.primary.main} />
+                <Ionicons name="school" size={24} color={theme.primary.light} />
               </View>
               <View style={styles.tutorialBannerContent}>
-                <Text style={[styles.tutorialBannerTitle, { color: theme.primary.dark }]}>
+                <Text style={[styles.tutorialBannerTitle, { color: theme.text }]}>
                   Aprende a sacar el maximo provecho
                 </Text>
-                <Text style={[styles.tutorialBannerSubtitle, { color: theme.primary.main }]}>
+                <Text style={[styles.tutorialBannerSubtitle, { color: theme.textSecondary }]}>
                   Descubre tutoriales personalizados segun tu uso
                 </Text>
               </View>
             </View>
           )}
 
-          <View style={[styles.sectionCard, { backgroundColor: theme.bg.primary }]}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
             {TUTORIAL_OPTIONS.map((tutorial, index) => {
               const isViewed = hasTutorialBeenViewed(tutorial.type as TutorialType);
               return (
@@ -431,7 +496,7 @@ export default function SettingsScreen() {
                   key={tutorial.type}
                   style={[
                     styles.menuItem,
-                    { borderBottomColor: theme.glass.border },
+                    { borderBottomColor: theme.border },
                     index === TUTORIAL_OPTIONS.length - 1 && { borderBottomWidth: 0 },
                   ]}
                   onPress={() => navigation.navigate('TutorialViewer', { tutorialType: tutorial.type })}
@@ -442,12 +507,12 @@ export default function SettingsScreen() {
                     </View>
                     <View style={styles.menuItemTextContainer}>
                       <View style={styles.tutorialTitleRow}>
-                        <Text style={[styles.menuItemTitle, { color: theme.text.primary }]}>{tutorial.title}</Text>
+                        <Text style={[styles.menuItemTitle, { color: theme.text }]}>{tutorial.title}</Text>
                         {!isViewed && (
                           <View style={[styles.tutorialDot, { backgroundColor: theme.error.main }]} />
                         )}
                       </View>
-                      <Text style={[styles.menuItemSubtitle, { color: theme.text.tertiary }]}>{tutorial.description}</Text>
+                      <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>{tutorial.description}</Text>
                     </View>
                   </View>
                   {isViewed ? (
@@ -464,7 +529,7 @@ export default function SettingsScreen() {
         {/* Logout Section */}
         <View style={styles.section}>
           <TouchableOpacity
-            style={[styles.logoutButton, { backgroundColor: theme.bg.primary }]}
+            style={[styles.logoutButton, { backgroundColor: theme.surface }]}
             onPress={handleLogout}
           >
             <Ionicons name="log-out-outline" size={22} color={theme.error.main} />
@@ -473,7 +538,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* App Version */}
-        <Text style={[styles.versionText, { color: theme.text.disabled }]}>Version 1.0.0</Text>
+        <Text style={[styles.versionText, { color: theme.textDisabled }]}>Version 1.0.0</Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -532,6 +597,11 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   avatarText: {
     fontSize: 40,

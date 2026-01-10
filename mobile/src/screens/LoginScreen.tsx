@@ -16,8 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PeekLogo } from '../components/PeekLogo';
-import { useTheme } from '../contexts/ThemeContext';
-import { radius } from '../theme/colors';
+import { darkTheme, radius } from '../theme/colors';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -29,7 +28,9 @@ export default function LoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const { showError, showWarning } = useToast();
-  const { theme, isDark } = useTheme();
+
+  // Always use dark theme for login screen
+  const theme = darkTheme;
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -64,12 +65,12 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.primary }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle="light-content" />
 
       {/* Background gradient */}
       <LinearGradient
-        colors={[theme.bg.primary, theme.bg.secondary, theme.bg.primary]}
+        colors={[theme.bg, theme.bgSecondary, theme.bg]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -98,17 +99,17 @@ export default function LoginScreen({ navigation }: Props) {
         <View style={styles.content}>
           {/* Logo */}
           <View style={styles.logoContainer}>
-            <PeekLogo size="large" showBubble={false} variant={isDark ? 'white' : 'dark'} />
+            <PeekLogo size="large" showBubble={false} variant="white" />
           </View>
-          <Text style={[styles.subtitle, { color: theme.text.secondary }]}>Tu comunidad, conectada</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Tu comunidad, conectada</Text>
 
           {/* Glass card for inputs */}
           <View style={[styles.glassCard, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border }]}>
             <View style={styles.inputContainer}>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                 placeholder="Email"
-                placeholderTextColor={theme.text.tertiary}
+                placeholderTextColor={theme.textTertiary}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -117,9 +118,9 @@ export default function LoginScreen({ navigation }: Props) {
               />
 
               <TextInput
-                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                 placeholder="Contrasena"
-                placeholderTextColor={theme.text.tertiary}
+                placeholderTextColor={theme.textTertiary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -155,7 +156,7 @@ export default function LoginScreen({ navigation }: Props) {
             disabled={loading}
             style={styles.linkContainer}
           >
-            <Text style={[styles.link, { color: theme.text.tertiary }]}>
+            <Text style={[styles.link, { color: theme.textTertiary }]}>
               No tienes cuenta? <Text style={[styles.linkBold, { color: theme.primary.light }]}>Registrate</Text>
             </Text>
           </TouchableOpacity>

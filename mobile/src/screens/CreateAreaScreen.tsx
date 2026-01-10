@@ -18,7 +18,7 @@ import { useTheme } from '../contexts/ThemeContext';
 
 export default function CreateAreaScreen({ navigation }: any) {
   const { showSuccess, showError } = useToast();
-  const { isDark } = useTheme();
+  const { theme, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -89,24 +89,24 @@ export default function CreateAreaScreen({ navigation }: any) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="close" size={28} color="#262626" />
+          <Ionicons name="close" size={28} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nueva Área</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Nueva Área</Text>
         <TouchableOpacity
           onPress={handleCreate}
           style={styles.headerButton}
           disabled={loading}
         >
-          <Text style={[styles.createButtonText, loading && styles.createButtonTextDisabled]}>
+          <Text style={[styles.createButtonText, { color: theme.primary.main }, loading && styles.createButtonTextDisabled]}>
             Crear
           </Text>
         </TouchableOpacity>
@@ -114,20 +114,22 @@ export default function CreateAreaScreen({ navigation }: any) {
 
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {/* Form */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Nombre *</Text>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.label, { color: theme.text }]}>Nombre *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5', color: theme.text }]}
             placeholder="Ej: Mi barrio, Trabajo, Casa"
+            placeholderTextColor={theme.textSecondary}
             value={name}
             onChangeText={setName}
             maxLength={50}
           />
 
-          <Text style={styles.label}>Descripción (opcional)</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Descripción (opcional)</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5', color: theme.text }]}
             placeholder="Describe el área de interés"
+            placeholderTextColor={theme.textSecondary}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -137,10 +139,10 @@ export default function CreateAreaScreen({ navigation }: any) {
         </View>
 
         {/* Map */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Ubicación</Text>
-          <Text style={styles.hint}>Toca el mapa para establecer el centro del área</Text>
-          <View style={styles.mapContainer}>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.label, { color: theme.text }]}>Ubicación</Text>
+          <Text style={[styles.hint, { color: theme.textSecondary }]}>Toca el mapa para establecer el centro del área</Text>
+          <View style={[styles.mapContainer, { backgroundColor: isDark ? '#2C2C2E' : '#e0e0e0' }]}>
             <MapView
               ref={mapRef}
               style={styles.map}
@@ -172,17 +174,17 @@ export default function CreateAreaScreen({ navigation }: any) {
             </MapView>
           </View>
           <View style={styles.coordinatesRow}>
-            <Text style={styles.coordinatesText}>
+            <Text style={[styles.coordinatesText, { color: theme.textSecondary }]}>
               Lat: {latitude.toFixed(6)}, Lng: {longitude.toFixed(6)}
             </Text>
           </View>
         </View>
 
         {/* Radius */}
-        <View style={styles.section}>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Radio</Text>
-            <Text style={styles.radiusValue}>{(radius / 1000).toFixed(1)} km</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Radio</Text>
+            <Text style={[styles.radiusValue, { color: theme.primary.main }]}>{(radius / 1000).toFixed(1)} km</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -191,25 +193,26 @@ export default function CreateAreaScreen({ navigation }: any) {
             step={500}
             value={radius}
             onValueChange={setRadius}
-            minimumTrackTintColor="#007AFF"
-            maximumTrackTintColor="#ccc"
-            thumbTintColor="#007AFF"
+            minimumTrackTintColor={theme.primary.main}
+            maximumTrackTintColor={isDark ? '#3A3A3C' : '#ccc'}
+            thumbTintColor={theme.primary.main}
           />
           <View style={styles.sliderLabels}>
-            <Text style={styles.sliderLabel}>0.5 km</Text>
-            <Text style={styles.sliderLabel}>50 km</Text>
+            <Text style={[styles.sliderLabel, { color: theme.textSecondary }]}>0.5 km</Text>
+            <Text style={[styles.sliderLabel, { color: theme.textSecondary }]}>50 km</Text>
           </View>
         </View>
 
         {/* Visibility */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Visibilidad</Text>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.label, { color: theme.text }]}>Visibilidad</Text>
           {visibilityOptions.map((option) => (
             <TouchableOpacity
               key={option.value}
               style={[
                 styles.visibilityOption,
-                visibility === option.value && styles.visibilityOptionSelected,
+                { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' },
+                visibility === option.value && { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E8F1FF' },
               ]}
               onPress={() => setVisibility(option.value)}
             >
@@ -217,6 +220,7 @@ export default function CreateAreaScreen({ navigation }: any) {
                 <View
                   style={[
                     styles.visibilityRadio,
+                    { borderColor: isDark ? '#5A5A5E' : '#ccc' },
                     visibility === option.value && styles.visibilityRadioSelected,
                   ]}
                 >
@@ -230,8 +234,8 @@ export default function CreateAreaScreen({ navigation }: any) {
                   )}
                 </View>
                 <View style={styles.visibilityOptionText}>
-                  <Text style={styles.visibilityLabel}>{option.label}</Text>
-                  <Text style={styles.visibilityDescription}>{option.description}</Text>
+                  <Text style={[styles.visibilityLabel, { color: theme.text }]}>{option.label}</Text>
+                  <Text style={[styles.visibilityDescription, { color: theme.textSecondary }]}>{option.description}</Text>
                 </View>
               </View>
             </TouchableOpacity>

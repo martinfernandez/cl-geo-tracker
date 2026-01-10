@@ -8,13 +8,16 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { groupApi, Group, GroupInvitation } from '../services/api';
 import { useGroupStore } from '../store/useGroupStore';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
+import { FadeInView } from '../components/FadeInView';
 
 type TabType = 'groups' | 'invitations';
 
@@ -27,6 +30,7 @@ export default function GroupsScreen({ navigation }: any) {
   const [processingInvitation, setProcessingInvitation] = useState<string | null>(null);
   const { setActiveGroup } = useGroupStore();
   const { showSuccess, showError } = useToast();
+  const { theme, isDark } = useTheme();
 
   const loadGroups = async () => {
     try {
@@ -111,156 +115,163 @@ export default function GroupsScreen({ navigation }: any) {
     }
   };
 
-  const renderGroupItem = ({ item }: { item: Group }) => {
+  const renderGroupItem = ({ item, index }: { item: Group; index: number }) => {
     const isAdmin = item.userRole === 'ADMIN';
 
     return (
-      <View style={styles.groupCard}>
+      <FadeInView delay={index * 50} duration={350}>
+      <View style={[styles.groupCard, { backgroundColor: theme.surface }]}>
         <TouchableOpacity
           style={styles.groupCardContent}
           onPress={() => handleGroupPress(item)}
           activeOpacity={0.7}
         >
-          <View style={styles.groupIcon}>
-            <Ionicons name="people" size={28} color="#007AFF" />
-          </View>
+          {item.imageUrl ? (
+            <Image source={{ uri: item.imageUrl }} style={styles.groupIconImage} />
+          ) : (
+            <View style={[styles.groupIcon, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E8F4FF' }]}>
+              <Ionicons name="people" size={28} color={theme.primary.main} />
+            </View>
+          )}
           <View style={styles.groupInfo}>
             <View style={styles.groupNameRow}>
-              <Text style={styles.groupName} numberOfLines={1}>
+              <Text style={[styles.groupName, { color: theme.text }]} numberOfLines={1}>
                 {item.name}
               </Text>
               {isAdmin ? (
-                <View style={styles.adminBadge}>
+                <View style={[styles.adminBadge, { backgroundColor: theme.primary.main }]}>
                   <Text style={styles.adminBadgeText}>Admin</Text>
                 </View>
               ) : null}
             </View>
             {item.description ? (
-              <Text style={styles.groupDescription} numberOfLines={2}>
+              <Text style={[styles.groupDescription, { color: theme.textSecondary }]} numberOfLines={2}>
                 {item.description}
               </Text>
             ) : null}
             <View style={styles.groupStats}>
-              <Ionicons name="person" size={14} color="#8E8E93" />
-              <Text style={styles.statsText}>{item.memberCount} miembros</Text>
+              <Ionicons name="person" size={14} color={theme.textSecondary} />
+              <Text style={[styles.statsText, { color: theme.textSecondary }]}>{item.memberCount} miembros</Text>
               {item.locationSharingEnabled ? (
                 <>
-                  <View style={styles.statDot} />
-                  <Ionicons name="location" size={14} color="#34C759" />
-                  <Text style={[styles.statsText, { color: '#34C759' }]}>
+                  <View style={[styles.statDot, { backgroundColor: theme.textSecondary }]} />
+                  <Ionicons name="location" size={14} color={theme.success.main} />
+                  <Text style={[styles.statsText, { color: theme.success.main }]}>
                     Compartiendo
                   </Text>
                 </>
               ) : null}
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.viewMapButton}
-          onPress={() => handleViewOnMap(item)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="map" size={18} color="#fff" />
-          <Text style={styles.viewMapButtonText}>Ver en Mapa</Text>
+          <View style={styles.groupCardActions}>
+            <TouchableOpacity
+              style={[styles.mapIconButton, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.15)' : '#E8F4FF' }]}
+              onPress={() => handleViewOnMap(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="map" size={18} color={theme.primary.main} />
+            </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+          </View>
         </TouchableOpacity>
       </View>
+      </FadeInView>
     );
   };
 
-  const renderInvitationItem = ({ item }: { item: GroupInvitation }) => {
+  const renderInvitationItem = ({ item, index }: { item: GroupInvitation; index: number }) => {
     const isProcessing = processingInvitation === item.id;
 
     return (
-      <View style={styles.invitationCard}>
-        <View style={styles.invitationHeader}>
-          <View style={styles.invitationIcon}>
-            <Ionicons name="people" size={24} color="#007AFF" />
-          </View>
-          <View style={styles.invitationInfo}>
-            <Text style={styles.invitationGroupName}>{item.group.name}</Text>
-            <Text style={styles.invitationSender}>
-              Invitado por {item.sender?.name || 'Usuario'}
+      <FadeInView delay={index * 50} duration={350}>
+      <View style={[styles.invitationCard, { backgroundColor: theme.surface }]}>
+        <View style={[styles.invitationIcon, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E8F4FF' }]}>
+          <Ionicons name="people" size={24} color={theme.primary.main} />
+        </View>
+        <View style={styles.invitationInfo}>
+          <Text style={[styles.invitationGroupName, { color: theme.text }]}>{item.group.name}</Text>
+          <Text style={[styles.invitationSender, { color: theme.textSecondary }]}>
+            Invitado por {item.sender?.name || 'Usuario'}
+          </Text>
+          {item.group.description ? (
+            <Text style={[styles.invitationDescription, { color: theme.textSecondary }]} numberOfLines={1}>
+              {item.group.description}
             </Text>
-            {item.group.description ? (
-              <Text style={styles.invitationDescription} numberOfLines={2}>
-                {item.group.description}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
         </View>
         <View style={styles.invitationActions}>
           <TouchableOpacity
-            style={[styles.rejectButton, isProcessing && styles.buttonDisabled]}
+            style={[styles.rejectButton, { backgroundColor: theme.surface, borderColor: theme.error.main }, isProcessing && styles.buttonDisabled]}
             onPress={() => handleRejectInvitation(item)}
             disabled={isProcessing}
           >
             {isProcessing ? (
-              <ActivityIndicator size="small" color="#FF3B30" />
+              <ActivityIndicator size="small" color={theme.error.main} />
             ) : (
-              <Text style={styles.rejectButtonText}>Rechazar</Text>
+              <Ionicons name="close-outline" size={20} color={theme.error.main} />
             )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.acceptButton, isProcessing && styles.buttonDisabled]}
+            style={[styles.acceptButton, { backgroundColor: theme.surface, borderColor: theme.success.main }, isProcessing && styles.buttonDisabled]}
             onPress={() => handleAcceptInvitation(item)}
             disabled={isProcessing}
           >
             {isProcessing ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={theme.success.main} />
             ) : (
-              <Text style={styles.acceptButtonText}>Aceptar</Text>
+              <Ionicons name="checkmark-outline" size={20} color={theme.success.main} />
             )}
           </TouchableOpacity>
         </View>
       </View>
+      </FadeInView>
     );
   };
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* SVG Background Pattern with Objects */}
       <ObjectsPatternBackground />
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Grupos</Text>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Grupos</Text>
         <TouchableOpacity
           onPress={() => navigation.navigate('CreateGroup')}
           style={styles.headerButton}
         >
-          <Ionicons name="add" size={28} color="#007AFF" />
+          <Ionicons name="add" size={28} color={theme.primary.main} />
         </TouchableOpacity>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={[styles.tabsContainer, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'groups' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'groups' && [styles.activeTab, { borderBottomColor: theme.text }]]}
           onPress={() => setActiveTab('groups')}
         >
-          <Text style={[styles.tabText, activeTab === 'groups' && styles.activeTabText]}>
+          <Text style={[styles.tabText, { color: theme.textSecondary }, activeTab === 'groups' && { color: theme.text }]}>
             Mis Grupos
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'invitations' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'invitations' && [styles.activeTab, { borderBottomColor: theme.text }]]}
           onPress={() => setActiveTab('invitations')}
         >
-          <Text style={[styles.tabText, activeTab === 'invitations' && styles.activeTabText]}>
+          <Text style={[styles.tabText, { color: theme.textSecondary }, activeTab === 'invitations' && { color: theme.text }]}>
             Invitaciones
           </Text>
           {invitations.length > 0 && (
-            <View style={styles.invitationBadge}>
+            <View style={[styles.invitationBadge, { backgroundColor: theme.error.main }]}>
               <Text style={styles.invitationBadgeText}>
                 {invitations.length > 99 ? '99+' : invitations.length}
               </Text>
@@ -281,13 +292,13 @@ export default function GroupsScreen({ navigation }: any) {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyTitle}>No tienes grupos</Text>
-              <Text style={styles.emptyText}>
+              <Ionicons name="people-outline" size={64} color={theme.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>No tienes grupos</Text>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 Crea un grupo para compartir ubicaciones y dispositivos con tu familia o amigos
               </Text>
               <TouchableOpacity
-                style={styles.createButton}
+                style={[styles.createButton, { backgroundColor: theme.primary.main }]}
                 onPress={() => navigation.navigate('CreateGroup')}
               >
                 <Ionicons name="add" size={20} color="#fff" />
@@ -307,9 +318,9 @@ export default function GroupsScreen({ navigation }: any) {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="mail-open-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyTitle}>Sin invitaciones</Text>
-              <Text style={styles.emptyText}>
+              <Ionicons name="mail-open-outline" size={64} color={theme.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>Sin invitaciones</Text>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 Cuando alguien te invite a un grupo, aparecera aqui
               </Text>
             </View>
@@ -425,6 +436,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
+  groupIconImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
   groupInfo: {
     flex: 1,
     marginRight: 8,
@@ -475,45 +492,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#C7C7CC',
     marginHorizontal: 6,
   },
-  viewMapButton: {
+  groupCardActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
-    backgroundColor: '#007AFF',
   },
-  viewMapButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
+  mapIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   invitationCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     marginBottom: 12,
-    padding: 16,
+    padding: 12,
+    paddingRight: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
-  },
-  invitationHeader: {
     flexDirection: 'row',
-    marginBottom: 16,
+    alignItems: 'center',
   },
   invitationIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#E8F4FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   invitationInfo: {
     flex: 1,
+    marginRight: 8,
   },
   invitationGroupName: {
     fontSize: 17,
@@ -532,34 +548,28 @@ const styles = StyleSheet.create({
   },
   invitationActions: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
   },
   rejectButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
     borderColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rejectButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FF3B30',
+    backgroundColor: '#fff',
   },
   acceptButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: '#34C759',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  acceptButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    backgroundColor: '#fff',
   },
   buttonDisabled: {
     opacity: 0.6,

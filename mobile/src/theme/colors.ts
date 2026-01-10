@@ -73,15 +73,30 @@ export const darkTheme = {
   ...shared,
 
   // Backgrounds
-  bg: {
+  bg: '#0A0A0F',
+  bgSecondary: '#12121A',
+  bgTertiary: '#1A1A24',
+  bgElevated: '#22222E',
+  surface: '#12121A',
+  border: '#2C2C2E',
+
+  // Text colors (flat)
+  text: '#F8FAFC',
+  textSecondary: '#CBD5E1',
+  textTertiary: '#94A3B8',
+  textDisabled: '#64748B',
+  textInverse: '#0F172A',
+
+  // Backgrounds (nested for compatibility)
+  bgNested: {
     primary: '#0A0A0F',
     secondary: '#12121A',
     tertiary: '#1A1A24',
     elevated: '#22222E',
   },
 
-  // Text colors
-  text: {
+  // Text colors (nested for compatibility)
+  textNested: {
     primary: '#F8FAFC',
     secondary: '#CBD5E1',
     tertiary: '#94A3B8',
@@ -185,15 +200,30 @@ export const lightTheme = {
   ...shared,
 
   // Backgrounds
-  bg: {
+  bg: '#FFFFFF',
+  bgSecondary: '#F8FAFC',
+  bgTertiary: '#F1F5F9',
+  bgElevated: '#FFFFFF',
+  surface: '#FFFFFF',
+  border: '#E5E5EA',
+
+  // Text colors (flat)
+  text: '#0F172A',
+  textSecondary: '#475569',
+  textTertiary: '#64748B',
+  textDisabled: '#94A3B8',
+  textInverse: '#F8FAFC',
+
+  // Backgrounds (nested for compatibility)
+  bgNested: {
     primary: '#FFFFFF',
     secondary: '#F8FAFC',
     tertiary: '#F1F5F9',
     elevated: '#FFFFFF',
   },
 
-  // Text colors
-  text: {
+  // Text colors (nested for compatibility)
+  textNested: {
     primary: '#0F172A',
     secondary: '#475569',
     tertiary: '#64748B',

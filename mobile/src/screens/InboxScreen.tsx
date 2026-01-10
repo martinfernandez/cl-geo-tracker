@@ -13,6 +13,7 @@ import {
   Easing,
   TextInput,
   Keyboard,
+  Image,
 } from 'react-native';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
@@ -21,16 +22,18 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { api, foundChatsApi, FoundObjectChat } from '../services/api';
 import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
+import { FadeInView } from '../components/FadeInView';
 import UnreadBadge from '../components/UnreadBadge';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
+import UserAvatar from '../components/UserAvatar';
 import { colors, radius } from '../theme/colors';
 import Svg, { Circle, Path, G } from 'react-native-svg';
 
 type TabType = 'messages' | 'found';
 
 // Animated status dot component for found objects
-const FoundStatusDot = ({ status, color }: { status: string; color: string }) => {
+const FoundStatusDot = ({ status, color, isDark }: { status: string; color: string; isDark?: boolean }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -85,7 +88,7 @@ const FoundStatusDot = ({ status, color }: { status: string; color: string }) =>
           ]}
         />
       )}
-      <View style={[foundDotStyles.inner, { backgroundColor: color }]} />
+      <View style={[foundDotStyles.inner, { backgroundColor: color, borderColor: isDark ? '#1C1C1E' : '#fff' }]} />
     </View>
   );
 };
@@ -131,11 +134,13 @@ interface ConversationPreview {
   group?: {
     id: string;
     name: string;
+    imageUrl?: string;
   };
   otherUser?: {
     id: string;
     name: string;
     email: string;
+    imageUrl?: string;
   };
   lastMessage?: {
     id: string;
@@ -167,7 +172,7 @@ const EVENT_COLORS = {
 };
 
 // Animated empty state illustration
-const AnimatedEmptyIllustration = () => {
+const AnimatedEmptyIllustration = ({ isDark }: { isDark: boolean }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
 
@@ -207,6 +212,10 @@ const AnimatedEmptyIllustration = () => {
     ).start();
   }, []);
 
+  // Theme-aware colors for the SVG
+  const outerCircleFill = isDark ? '#2C2C2E' : '#F0F4FF';
+  const dashedCircleStroke = isDark ? '#3A3A3C' : '#E0E7FF';
+
   return (
     <View style={emptyStyles.illustrationContainer}>
       <Animated.View
@@ -218,9 +227,9 @@ const AnimatedEmptyIllustration = () => {
         ]}
       >
         <Svg width={120} height={120} viewBox="0 0 120 120">
-          <Circle cx="60" cy="60" r="55" fill="#F0F4FF" />
-          <Circle cx="60" cy="60" r="45" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
-          <Circle cx="60" cy="60" r="35" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="55" fill={outerCircleFill} />
+          <Circle cx="60" cy="60" r="45" fill="none" stroke={dashedCircleStroke} strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="35" fill="none" stroke={dashedCircleStroke} strokeWidth="1" strokeDasharray="4 4" />
           <G>
             {/* Chat bubbles */}
             <Path
@@ -255,10 +264,12 @@ interface SwipeableConversationProps {
   item: ConversationPreview;
   onPress: () => void;
   onDelete: () => void;
+  onLeaveGroup?: () => void;
   theme: any;
+  isDark: boolean;
 }
 
-const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConversationProps) => {
+const SwipeableConversation = ({ item, onPress, onDelete, onLeaveGroup, theme, isDark }: SwipeableConversationProps) => {
   const swipeableRef = useRef<Swipeable>(null);
 
   const hasUnread = item.unreadCount > 0;
@@ -283,6 +294,7 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
     : item.otherUser?.name || 'Usuario';
 
   const avatarInitial = displayName.charAt(0).toUpperCase();
+  const avatarImage = isGroup ? item.group?.imageUrl : item.otherUser?.imageUrl;
   const eventIcon = item.event ? EVENT_ICONS[item.event.type] : null;
   const eventColor = item.event ? EVENT_COLORS[item.event.type] : null;
 
@@ -301,6 +313,21 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
     );
   };
 
+  const handleLeaveGroup = () => {
+    Alert.alert(
+      'Salir del grupo',
+      `¿Estás seguro de que deseas salir del grupo "${displayName}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel', onPress: () => swipeableRef.current?.close() },
+        {
+          text: 'Salir',
+          style: 'destructive',
+          onPress: onLeaveGroup,
+        },
+      ]
+    );
+  };
+
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
@@ -310,6 +337,17 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
       outputRange: [1, 0.5],
       extrapolate: 'clamp',
     });
+
+    // For group chats, show "Leave group" instead of delete
+    if (isGroup) {
+      return (
+        <RectButton style={[styles.deleteAction, { backgroundColor: '#FF9500' }]} onPress={handleLeaveGroup}>
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <Ionicons name="exit-outline" size={22} color="#fff" />
+          </Animated.View>
+        </RectButton>
+      );
+    }
 
     return (
       <RectButton style={[styles.deleteAction, { backgroundColor: theme.error.main }]} onPress={handleDelete}>
@@ -332,7 +370,9 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
         style={[
           styles.conversationCard,
           {
-            backgroundColor: hasUnread ? theme.primary.subtle : theme.bg.primary,
+            backgroundColor: hasUnread
+              ? (isDark ? 'rgba(88, 86, 214, 0.15)' : 'rgba(88, 86, 214, 0.08)')
+              : (isDark ? 'rgba(28, 28, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)'),
             borderBottomColor: theme.glass.border,
           },
         ]}
@@ -343,21 +383,25 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
           <View style={styles.conversationLeft}>
             {/* Avatar */}
             <View style={styles.avatarContainer}>
-              <View
-                style={[
-                  styles.avatar,
-                  { backgroundColor: isGroup ? theme.success.main : theme.primary.main },
-                ]}
-              >
-                {isGroup ? (
-                  <Ionicons name="people" size={18} color="#fff" />
+              {isGroup ? (
+                avatarImage ? (
+                  <Image source={{ uri: avatarImage }} style={styles.avatarImage} />
                 ) : (
-                  <Text style={styles.avatarText}>{avatarInitial}</Text>
-                )}
-              </View>
+                  <View style={[styles.avatar, { backgroundColor: theme.success.main }]}>
+                    <Ionicons name="people" size={18} color="#fff" />
+                  </View>
+                )
+              ) : (
+                <UserAvatar
+                  imageUrl={avatarImage}
+                  name={displayName}
+                  size={44}
+                  backgroundColor={theme.primary.main}
+                />
+              )}
 
               {!isGroup && eventIcon && eventColor && (
-                <View style={[styles.eventBadge, { backgroundColor: eventColor }]}>
+                <View style={[styles.eventBadge, { backgroundColor: eventColor, borderColor: isDark ? '#1C1C1E' : '#fff' }]}>
                   <Ionicons name={eventIcon as any} size={10} color="#fff" />
                 </View>
               )}
@@ -369,7 +413,7 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
                 <Text
                   style={[
                     styles.userName,
-                    { color: theme.text.primary },
+                    { color: theme.text },
                     hasUnread && styles.userNameUnread,
                   ]}
                   numberOfLines={1}
@@ -377,7 +421,7 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
                   {displayName}
                 </Text>
                 {timeAgo && (
-                  <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.text.tertiary }]}>
+                  <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.textTertiary }]}>
                     {timeAgo}
                   </Text>
                 )}
@@ -387,7 +431,7 @@ const SwipeableConversation = ({ item, onPress, onDelete, theme }: SwipeableConv
                 <Text
                   style={[
                     styles.lastMessage,
-                    { color: hasUnread ? theme.text.primary : theme.text.secondary },
+                    { color: hasUnread ? theme.text : theme.textSecondary },
                     hasUnread && styles.lastMessageUnread,
                   ]}
                   numberOfLines={1}
@@ -418,7 +462,7 @@ const FOUND_STATUS_CONFIG = {
 
 export default function InboxScreen() {
   const navigation = useNavigation();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('messages');
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
@@ -475,14 +519,18 @@ export default function InboxScreen() {
     return unsubscribe;
   }, [navigation]);
 
-  const loadData = async () => {
+  const loadData = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (!isRefresh) {
+        setLoading(true);
+      }
       await Promise.all([loadConversations(), loadFoundChats()]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
-      setLoading(false);
+      if (!isRefresh) {
+        setLoading(false);
+      }
     }
   };
 
@@ -506,7 +554,7 @@ export default function InboxScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(true);
     setRefreshing(false);
   };
 
@@ -514,8 +562,8 @@ export default function InboxScreen() {
     navigation.navigate('FoundChat' as never, { chatId: chat.id } as never);
   };
 
-  const renderFoundChat = ({ item }: { item: FoundObjectChat }) => {
-    const statusConfig = FOUND_STATUS_CONFIG[item.status as keyof typeof FOUND_STATUS_CONFIG];
+  const renderFoundChat = ({ item, index }: { item: FoundObjectChat; index: number }) => {
+    const statusConfig = FOUND_STATUS_CONFIG[item.status as keyof typeof FOUND_STATUS_CONFIG] || FOUND_STATUS_CONFIG.ACTIVE;
     const timeAgo = formatDistanceToNow(new Date(item.lastMessageAt || item.createdAt), {
       addSuffix: false,
       locale: es,
@@ -523,14 +571,17 @@ export default function InboxScreen() {
 
     const finderName = item.finderName || 'Anónimo';
     const finderInitial = finderName.charAt(0).toUpperCase();
-    const hasUnread = item.unreadCount && item.unreadCount > 0;
+    const hasUnread = (item.unreadCount ?? 0) > 0;
 
     return (
+      <FadeInView delay={index * 40} duration={300} slideFrom={10}>
       <TouchableOpacity
         style={[
           styles.conversationCard,
           {
-            backgroundColor: hasUnread ? theme.primary.subtle : theme.bg.primary,
+            backgroundColor: hasUnread
+              ? (isDark ? 'rgba(255, 149, 0, 0.15)' : 'rgba(255, 149, 0, 0.08)')
+              : (isDark ? 'rgba(28, 28, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)'),
             borderBottomColor: theme.glass.border,
           },
         ]}
@@ -540,10 +591,12 @@ export default function InboxScreen() {
         <View style={styles.conversationTouchable}>
           <View style={styles.conversationLeft}>
             <View style={styles.avatarContainer}>
-              <View style={[styles.avatar, { backgroundColor: '#FF9500' }]}>
-                <Text style={styles.avatarText}>{finderInitial}</Text>
-              </View>
-              <FoundStatusDot status={item.status} color={statusConfig.color} />
+              <UserAvatar
+                name={finderName}
+                size={44}
+                backgroundColor="#FF9500"
+              />
+              <FoundStatusDot status={item.status} color={statusConfig.color} isDark={isDark} />
             </View>
 
             <View style={styles.conversationInfo}>
@@ -551,14 +604,14 @@ export default function InboxScreen() {
                 <Text
                   style={[
                     styles.userName,
-                    { color: theme.text.primary },
+                    { color: theme.text },
                     hasUnread && styles.userNameUnread
                   ]}
                   numberOfLines={1}
                 >
                   {item.device?.name || 'Objeto'}
                 </Text>
-                <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.text.tertiary }]}>
+                <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.textTertiary }]}>
                   {timeAgo}
                 </Text>
               </View>
@@ -566,7 +619,7 @@ export default function InboxScreen() {
                 <Text
                   style={[
                     styles.lastMessage,
-                    { color: hasUnread ? theme.text.primary : theme.text.secondary },
+                    { color: hasUnread ? theme.text : theme.textSecondary },
                     hasUnread && styles.lastMessageUnread
                   ]}
                   numberOfLines={1}
@@ -582,6 +635,7 @@ export default function InboxScreen() {
           )}
         </View>
       </TouchableOpacity>
+      </FadeInView>
     );
   };
 
@@ -613,13 +667,30 @@ export default function InboxScreen() {
     }
   };
 
-  const renderConversation = ({ item }: { item: ConversationPreview }) => (
-    <SwipeableConversation
-      item={item}
-      onPress={() => handleConversationPress(item)}
-      onDelete={() => handleDeleteConversation(item.id)}
-      theme={theme}
-    />
+  const handleLeaveGroup = async (conversation: ConversationPreview) => {
+    if (!conversation.groupId) return;
+
+    try {
+      await api.post(`/groups/${conversation.groupId}/leave`);
+      setConversations((prev) => prev.filter((c) => c.id !== conversation.id));
+      showSuccess('Has salido del grupo');
+    } catch (error: any) {
+      console.error('Error leaving group:', error);
+      showError('No se pudo salir del grupo');
+    }
+  };
+
+  const renderConversation = ({ item, index }: { item: ConversationPreview; index: number }) => (
+    <FadeInView delay={index * 40} duration={300} slideFrom={10}>
+      <SwipeableConversation
+        item={item}
+        onPress={() => handleConversationPress(item)}
+        onDelete={() => handleDeleteConversation(item.id)}
+        onLeaveGroup={() => handleLeaveGroup(item)}
+        theme={theme}
+        isDark={isDark}
+      />
+    </FadeInView>
   );
 
   const clearSearch = () => {
@@ -629,12 +700,12 @@ export default function InboxScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
-        <View style={[styles.header, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
+      <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
+        <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.glass.border }]}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={24} color={theme.text.primary} />
+            <Ionicons name="chevron-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text.primary }]}>Mensajes</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Mensajes</Text>
           <View style={styles.backButton} />
         </View>
         <View style={styles.loadingContainer}>
@@ -645,21 +716,21 @@ export default function InboxScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
       {/* SVG Background Pattern with Objects */}
       <ObjectsPatternBackground />
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.glass.border }]}>
         <TouchableOpacity
           style={[styles.backButtonContainer, { backgroundColor: theme.glass.bg }]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="chevron-back" size={24} color={theme.text.primary} />
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: theme.text.primary }]}>Mensajes</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.text.tertiary }]}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Mensajes</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textTertiary }]}>
             {conversations.length} {conversations.length === 1 ? 'conversación' : 'conversaciones'}
           </Text>
         </View>
@@ -667,7 +738,7 @@ export default function InboxScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={[styles.tabsContainer, { backgroundColor: theme.bg.primary }]}>
+      <View style={[styles.tabsContainer, { backgroundColor: theme.bg, borderBottomColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
         <TouchableOpacity
           style={[
             styles.tab,
@@ -678,12 +749,12 @@ export default function InboxScreen() {
           <Ionicons
             name="chatbubbles-outline"
             size={18}
-            color={activeTab === 'messages' ? theme.primary.main : theme.text.tertiary}
+            color={activeTab === 'messages' ? theme.primary.main : theme.textTertiary}
           />
           <Text
             style={[
               styles.tabText,
-              { color: activeTab === 'messages' ? theme.primary.main : theme.text.tertiary },
+              { color: activeTab === 'messages' ? theme.primary.main : theme.textTertiary },
             ]}
           >
             Mensajes
@@ -707,15 +778,15 @@ export default function InboxScreen() {
           <Ionicons
             name="search-outline"
             size={18}
-            color={activeTab === 'found' ? '#FF9500' : theme.text.tertiary}
+            color={activeTab === 'found' ? '#FF9500' : theme.textTertiary}
           />
           <Text
             style={[
               styles.tabText,
-              { color: activeTab === 'found' ? '#FF9500' : theme.text.tertiary },
+              { color: activeTab === 'found' ? '#FF9500' : theme.textTertiary },
             ]}
           >
-            Objetos
+            Tags
           </Text>
           {foundChats.filter(c => c.status === 'ACTIVE').length > 0 && (
             <View style={[styles.tabBadge, { backgroundColor: '#FF9500' }]}>
@@ -732,15 +803,15 @@ export default function InboxScreen() {
         <View
           style={[
             styles.searchInputContainer,
-            { backgroundColor: 'rgba(255,255,255,0.8)', borderColor: isSearchFocused ? theme.primary.main : 'transparent' },
+            { backgroundColor: isDark ? 'rgba(58, 58, 60, 0.8)' : 'rgba(255,255,255,0.8)', borderColor: isSearchFocused ? theme.primary.main : 'transparent' },
           ]}
         >
-          <Ionicons name="search" size={18} color={theme.text.tertiary} style={styles.searchIcon} />
+          <Ionicons name="search" size={18} color={theme.textTertiary} style={styles.searchIcon} />
           <TextInput
             ref={searchInputRef}
-            style={[styles.searchInput, { color: theme.text.primary }]}
-            placeholder={activeTab === 'messages' ? 'Buscar conversaciones...' : 'Buscar objetos...'}
-            placeholderTextColor={theme.text.tertiary}
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder={activeTab === 'messages' ? 'Buscar conversaciones...' : 'Buscar tags...'}
+            placeholderTextColor={theme.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={() => setIsSearchFocused(true)}
@@ -751,7 +822,7 @@ export default function InboxScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={18} color={theme.text.tertiary} />
+              <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
@@ -776,12 +847,12 @@ export default function InboxScreen() {
             {searchQuery.trim() ? (
               <>
                 <View style={[styles.noResultsIcon, { backgroundColor: theme.glass.bg }]}>
-                  <Ionicons name="search-outline" size={40} color={theme.text.tertiary} />
+                  <Ionicons name="search-outline" size={40} color={theme.textTertiary} />
                 </View>
-                <Text style={[styles.emptyStateTitle, { color: theme.text.primary }]}>
+                <Text style={[styles.emptyStateTitle, { color: theme.text }]}>
                   Sin resultados
                 </Text>
-                <Text style={[styles.emptyStateMessage, { color: theme.text.secondary }]}>
+                <Text style={[styles.emptyStateMessage, { color: theme.textSecondary }]}>
                   No se encontraron conversaciones para "{searchQuery}"
                 </Text>
                 <TouchableOpacity
@@ -796,11 +867,11 @@ export default function InboxScreen() {
               </>
             ) : (
               <>
-                <AnimatedEmptyIllustration />
-                <Text style={[styles.emptyStateTitle, { color: theme.text.primary }]}>
+                <AnimatedEmptyIllustration isDark={isDark} />
+                <Text style={[styles.emptyStateTitle, { color: theme.text }]}>
                   No tienes mensajes
                 </Text>
-                <Text style={[styles.emptyStateMessage, { color: theme.text.secondary }]}>
+                <Text style={[styles.emptyStateMessage, { color: theme.textSecondary }]}>
                   Los mensajes de eventos urgentes aparecerán aquí
                 </Text>
                 <View style={[styles.emptyHint, { backgroundColor: theme.primary.subtle }]}>
@@ -923,6 +994,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   avatarText: {
     fontSize: 17,

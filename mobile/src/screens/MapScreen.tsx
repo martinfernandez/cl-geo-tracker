@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Modal, Platform, Animated } from 'react-native';
 import MapView, { Marker, Callout, Circle, Polyline } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import EventFilterModal from '../components/EventFilterModal';
 import { PulsingMarker } from '../components/PulsingMarker';
 import GroupModeChip from '../components/GroupModeChip';
 import GroupMembersModal from '../components/GroupMembersModal';
+import DevicesModal from '../components/DevicesModal';
 import { PeekLogo } from '../components/PeekLogo';
 import { PeekModeBanner } from '../components/PeekModeBanner';
 import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
@@ -119,6 +120,7 @@ const menuIconStyles = StyleSheet.create({
 export function MapScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const [showDevicesModal, setShowDevicesModal] = useState(false);
 
   // Use the centralized map state hook
   const {
@@ -157,6 +159,20 @@ export function MapScreen({ navigation, route }: any) {
     centerOnUserLocation,
     loadGroupData,
   } = useMapState({ navigation, route });
+
+  // Handler for selecting a device from the modal
+  const handleSelectDevice = (device: any) => {
+    if (device.positions && device.positions.length > 0) {
+      const position = device.positions[0];
+      mapRef.current?.animateToRegion({
+        latitude: position.latitude,
+        longitude: position.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 500);
+    }
+    setShowDevicesModal(false);
+  };
 
   return (
     <View style={styles.container}>
@@ -232,19 +248,23 @@ export function MapScreen({ navigation, route }: any) {
                 {userProfile?.name?.charAt(0)?.toUpperCase() || '?'}
               </Text>
             </View>
-            <Callout>
-              <View style={styles.callout}>
-                <Text style={styles.calloutTitle}>Tu ubicación</Text>
-                <Text style={styles.calloutText}>
-                  {userProfile?.name || 'Usuario'}
+            <Callout tooltip={false}>
+              <View style={styles.compactCallout}>
+                <View style={[styles.compactCalloutAvatar, { backgroundColor: '#007AFF' }]}>
+                  <Text style={styles.compactCalloutAvatarText}>
+                    {userProfile?.name?.charAt(0)?.toUpperCase() || '?'}
+                  </Text>
+                </View>
+                <Text style={styles.compactCalloutName} numberOfLines={1}>
+                  {userProfile?.name || 'Tu ubicación'}
                 </Text>
               </View>
             </Callout>
           </Marker>
         )}
 
-        {/* Device Markers - Only show when NOT in group mode */}
-        {!activeGroup && devicesWithPosition.map((device: any) => {
+        {/* Device Markers - Always visible for device owner */}
+        {devicesWithPosition.map((device: any) => {
           const position = device.positions[0];
           const deviceColor = device.color || '#007AFF';
           const deviceInitial = (device.name || device.imei || '?').charAt(0).toUpperCase();
@@ -267,21 +287,13 @@ export function MapScreen({ navigation, route }: any) {
                   </Text>
                 </View>
               </View>
-              <Callout>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>
+              <Callout tooltip={false}>
+                <View style={styles.compactCallout}>
+                  <View style={[styles.compactCalloutAvatar, { backgroundColor: deviceColor }]}>
+                    <Text style={styles.compactCalloutAvatarText}>{deviceInitial}</Text>
+                  </View>
+                  <Text style={styles.compactCalloutName} numberOfLines={1}>
                     {device.name || device.imei}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    IMEI: {device.imei}
-                  </Text>
-                  {position.speed !== null && (
-                    <Text style={styles.calloutText}>
-                      Velocidad: {position.speed.toFixed(1)} km/h
-                    </Text>
-                  )}
-                  <Text style={styles.calloutText}>
-                    {new Date(position.createdAt || position.timestamp).toLocaleString('es')}
                   </Text>
                 </View>
               </Callout>
@@ -322,21 +334,13 @@ export function MapScreen({ navigation, route }: any) {
                   ]}>{initial}</Text>
                 </View>
               </View>
-              <Callout>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>
+              <Callout tooltip={false}>
+                <View style={styles.compactCallout}>
+                  <View style={[styles.compactCalloutAvatar, { backgroundColor: markerColor }]}>
+                    <Text style={styles.compactCalloutAvatarText}>{initial}</Text>
+                  </View>
+                  <Text style={styles.compactCalloutName} numberOfLines={1}>
                     {pos.memberName}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    {isPhone ? 'Telefono' : pos.deviceName || 'Dispositivo JX10'}
-                  </Text>
-                  {pos.speed !== null && pos.speed !== undefined && (
-                    <Text style={styles.calloutText}>
-                      Velocidad: {pos.speed.toFixed(1)} km/h
-                    </Text>
-                  )}
-                  <Text style={styles.calloutText}>
-                    {new Date(pos.timestamp).toLocaleString('es')}
                   </Text>
                 </View>
               </Callout>
@@ -384,30 +388,70 @@ export function MapScreen({ navigation, route }: any) {
               )}
               <Callout tooltip={false}>
                 <TouchableOpacity
-                  style={styles.callout}
+                  style={styles.eventCallout}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.calloutTitleRow}>
-                    {event.isUrgent && <UrgentPulsingDot size="small" />}
-                    <Text style={[styles.calloutTitle, event.isUrgent && styles.urgentTitle]}>
-                      {event.realTimeTracking && '📍 '}
-                      {event.type}
-                    </Text>
+                  {/* Row 1: Badges (Status + Urgent + Type) */}
+                  <View style={styles.eventBadgesRow}>
+                    <View style={[
+                      styles.eventStatusBadge,
+                      event.status === 'IN_PROGRESS'
+                        ? styles.eventStatusActive
+                        : styles.eventStatusClosed
+                    ]}>
+                      <View style={[
+                        styles.eventStatusDot,
+                        event.status === 'IN_PROGRESS'
+                          ? styles.eventStatusDotActive
+                          : styles.eventStatusDotClosed
+                      ]} />
+                      <Text style={[
+                        styles.eventStatusText,
+                        event.status === 'IN_PROGRESS'
+                          ? styles.eventStatusTextActive
+                          : styles.eventStatusTextClosed
+                      ]}>
+                        {event.status === 'IN_PROGRESS' ? 'Activo' : 'Cerrado'}
+                      </Text>
+                    </View>
+                    {event.isUrgent && (
+                      <View style={styles.eventUrgentBadge}>
+                        <UrgentPulsingDot size="small" />
+                      </View>
+                    )}
+                    <View style={styles.eventTypeBadge}>
+                      <Ionicons
+                        name={event.realTimeTracking ? 'navigate' : 'flag'}
+                        size={10}
+                        color={staticColors.primary.main}
+                      />
+                      <Text style={styles.eventTypeText}>{event.type}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.calloutText} numberOfLines={2}>
+
+                  {/* Row 2: Title/Description */}
+                  <Text style={styles.eventCalloutTitle} numberOfLines={2}>
                     {event.description}
                   </Text>
-                  <Text style={styles.calloutText}>
-                    Estado: {event.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
-                  </Text>
-                  {activeGroup && event.creatorName && (
-                    <Text style={styles.calloutText}>
-                      Creado por: {event.creatorName}
+
+                  {/* Row 3: Time + Creator (compact) */}
+                  <View style={styles.eventMetaRow}>
+                    <Ionicons name="time-outline" size={11} color={staticColors.neutral[500]} />
+                    <Text style={styles.eventMetaText}>
+                      {new Date(event.createdAt).toLocaleDateString('es-AR', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </Text>
-                  )}
-                  <Text style={[styles.calloutText, styles.calloutHint]}>
-                    Toca para ver detalles
-                  </Text>
+                    {activeGroup && event.creatorName && (
+                      <>
+                        <Text style={styles.eventMetaSeparator}>·</Text>
+                        <Text style={styles.eventMetaText}>{event.creatorName}</Text>
+                      </>
+                    )}
+                  </View>
                 </TouchableOpacity>
               </Callout>
             </Marker>
@@ -438,10 +482,29 @@ export function MapScreen({ navigation, route }: any) {
 
       {devicesWithPosition.length === 0 && !userLocation && (
         <View style={[styles.emptyOverlay, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border }]}>
-          <Text style={[styles.emptyText, { color: theme.text.secondary }]}>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
             No hay dispositivos con posición disponible
           </Text>
         </View>
+      )}
+
+      {/* Devices Button - Always show if user has devices */}
+      {devicesWithPosition.length > 0 && (
+        <TouchableOpacity
+          style={[
+            styles.devicesButton,
+            {
+              backgroundColor: theme.bg,
+              bottom: (isPeekMode || activeGroup) ? 100 : 20,
+            },
+          ]}
+          onPress={() => setShowDevicesModal(true)}
+        >
+          <Ionicons name="hardware-chip" size={20} color={theme.primary.main} />
+          <View style={[styles.devicesBadge, { backgroundColor: theme.primary.main }]}>
+            <Text style={styles.devicesBadgeText}>{devicesWithPosition.length}</Text>
+          </View>
+        </TouchableOpacity>
       )}
 
       {/* Route Toggle Button */}
@@ -452,17 +515,17 @@ export function MapScreen({ navigation, route }: any) {
           style={[
             styles.routeToggleButton,
             {
-              backgroundColor: theme.bg.primary,
+              backgroundColor: theme.bg,
               bottom: (isPeekMode || activeGroup) ? 100 : 20,
             },
-            !showRoutes && { backgroundColor: theme.bg.secondary },
+            !showRoutes && { backgroundColor: theme.bgSecondary },
           ]}
           onPress={() => setShowRoutes((prev: boolean) => !prev)}
         >
           <Ionicons
             name={showRoutes ? 'analytics' : 'analytics-outline'}
             size={22}
-            color={showRoutes ? theme.primary.main : theme.text.tertiary}
+            color={showRoutes ? theme.primary.main : theme.textTertiary}
           />
         </TouchableOpacity>
       )}
@@ -473,7 +536,7 @@ export function MapScreen({ navigation, route }: any) {
           style={[
             styles.centerLocationButton,
             {
-              backgroundColor: theme.bg.primary,
+              backgroundColor: theme.bg,
               bottom: (isPeekMode || activeGroup) ? 100 : 20,
             }
           ]}
@@ -516,32 +579,35 @@ export function MapScreen({ navigation, route }: any) {
       />
 
       {/* Header Bar - Instagram-style compact */}
-      <View style={[styles.headerBar, { paddingTop: insets.top + 4, backgroundColor: theme.bg.primary }]}>
-        {/* Left side: Logo or Group Chip */}
-        {!activeGroup ? (
-          <PeekLogo
-            size="small"
-            showBubble={false}
-            isPeeking={isPeekMode}
-            onPress={handlePeekModeToggle}
-          />
-        ) : (
-          <GroupModeChip
-            group={activeGroup}
-            onClose={clearActiveGroup}
-            onPress={() => setShowGroupMembersModal(true)}
-            memberCount={new Set(groupPositions.map((p: any) => p.memberId)).size}
-          />
-        )}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 4, backgroundColor: theme.bg }]}>
+        {/* Left side: Logo */}
+        <PeekLogo
+          size="small"
+          showBubble={false}
+          isPeeking={isPeekMode}
+          onPress={handlePeekModeToggle}
+        />
 
         {/* Right side: Animated Menu Button */}
         <TouchableOpacity
           style={styles.menuButton}
           onPress={() => setShowMenu(true)}
         >
-          <AnimatedMenuIcon isOpen={showMenu} color={theme.text.primary} />
+          <AnimatedMenuIcon isOpen={showMenu} color={theme.text} />
         </TouchableOpacity>
       </View>
+
+      {/* Group Mode Chip - positioned inside the map area */}
+      {activeGroup && (
+        <View style={[styles.groupChipContainer, { top: insets.top + 60 }]}>
+          <GroupModeChip
+            group={activeGroup}
+            onClose={clearActiveGroup}
+            onPress={() => setShowGroupMembersModal(true)}
+            memberCount={new Set(groupPositions.map((p: any) => p.memberId)).size}
+          />
+        </View>
+      )}
 
       {/* Group Members Modal */}
       {activeGroup && (
@@ -553,6 +619,14 @@ export function MapScreen({ navigation, route }: any) {
           groupName={activeGroup.name}
         />
       )}
+
+      {/* Devices Modal */}
+      <DevicesModal
+        visible={showDevicesModal}
+        onClose={() => setShowDevicesModal(false)}
+        devices={devicesWithPosition}
+        onSelectDevice={handleSelectDevice}
+      />
 
       {/* Menu Modal - Instagram Style Bottom Sheet */}
       <Modal
@@ -566,7 +640,7 @@ export function MapScreen({ navigation, route }: any) {
           activeOpacity={1}
           onPress={() => setShowMenu(false)}
         >
-          <View style={[styles.menuBottomSheet, { backgroundColor: theme.bg.primary }]}>
+          <View style={[styles.menuBottomSheet, { backgroundColor: theme.bg }]}>
             {/* Handle Bar */}
             <View style={[styles.sheetHandle, { backgroundColor: theme.glass.borderStrong }]} />
 
@@ -586,10 +660,10 @@ export function MapScreen({ navigation, route }: any) {
                   </Text>
                 </View>
                 <View style={styles.profileInfo}>
-                  <Text style={[styles.profileName, { color: theme.text.primary }]}>{userProfile.name}</Text>
-                  <Text style={[styles.profileEmail, { color: theme.text.tertiary }]}>{userProfile.email}</Text>
+                  <Text style={[styles.profileName, { color: theme.text }]}>{userProfile.name}</Text>
+                  <Text style={[styles.profileEmail, { color: theme.textTertiary }]}>{userProfile.email}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+                <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
               </TouchableOpacity>
             )}
 
@@ -603,15 +677,15 @@ export function MapScreen({ navigation, route }: any) {
                   navigation.navigate('AreasList');
                 }}
               >
-                <Ionicons name="location-outline" size={26} color={theme.text.primary} />
-                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Mis Areas de Interes</Text>
+                <Ionicons name="location-outline" size={26} color={theme.text} />
+                <Text style={[styles.menuItemText, { color: theme.text }]}>Mis Areas de Interes</Text>
                 <View style={styles.menuItemRight}>
                   {totalPendingRequests > 0 && (
                     <View style={[styles.menuBadge, { backgroundColor: theme.error.main }]}>
                       <Text style={styles.menuBadgeText}>{totalPendingRequests}</Text>
                     </View>
                   )}
-                  <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} />
+                  <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
                 </View>
               </TouchableOpacity>
 
@@ -627,9 +701,9 @@ export function MapScreen({ navigation, route }: any) {
                   });
                 }}
               >
-                <Ionicons name="search-outline" size={26} color={theme.text.primary} />
-                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Buscar Areas</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+                <Ionicons name="search-outline" size={26} color={theme.text} />
+                <Text style={[styles.menuItemText, { color: theme.text }]}>Buscar Areas</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -639,9 +713,9 @@ export function MapScreen({ navigation, route }: any) {
                   navigation.navigate('NotificationsList');
                 }}
               >
-                <Ionicons name="notifications-outline" size={26} color={theme.text.primary} />
-                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Notificaciones</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+                <Ionicons name="notifications-outline" size={26} color={theme.text} />
+                <Text style={[styles.menuItemText, { color: theme.text }]}>Notificaciones</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               <View style={[styles.menuDivider, { backgroundColor: theme.glass.border }]} />
@@ -653,9 +727,9 @@ export function MapScreen({ navigation, route }: any) {
                   navigation.navigate('Devices', { screen: 'DevicesList' });
                 }}
               >
-                <Ionicons name="hardware-chip-outline" size={26} color={theme.text.primary} />
-                <Text style={[styles.menuItemText, { color: theme.text.primary }]}>Mis Dispositivos</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+                <Ionicons name="hardware-chip-outline" size={26} color={theme.text} />
+                <Text style={[styles.menuItemText, { color: theme.text }]}>Mis Dispositivos</Text>
+                <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -667,7 +741,7 @@ export function MapScreen({ navigation, route }: any) {
               >
                 <Ionicons name="add-circle-outline" size={26} color={theme.primary.main} />
                 <Text style={[styles.menuItemText, { color: theme.primary.main }]}>Agregar Dispositivo</Text>
-                <Ionicons name="chevron-forward" size={20} color={theme.text.disabled} style={styles.menuChevron} />
+                <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} style={styles.menuChevron} />
               </TouchableOpacity>
 
               {/* Cancel Button */}
@@ -695,14 +769,8 @@ const styles = StyleSheet.create({
   },
   callout: {
     padding: 12,
-    minWidth: 220,
-    maxWidth: 280,
-  },
-  calloutTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    minWidth: 200,
+    maxWidth: 260,
   },
   calloutTitle: {
     fontSize: 15,
@@ -716,10 +784,136 @@ const styles = StyleSheet.create({
     marginTop: 3,
     lineHeight: 18,
   },
-  calloutHint: {
-    color: staticColors.primary.main,
+  // Compact callout styles - pill-shaped for devices/users
+  compactCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingLeft: 4,
+    paddingRight: 12,
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    gap: 8,
+    minWidth: 100,
+    maxWidth: 250,
+  },
+  compactCalloutAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  compactCalloutAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  compactCalloutName: {
+    fontSize: 14,
     fontWeight: '600',
-    marginTop: 6,
+    color: '#1a1a1a',
+    flexShrink: 1,
+  },
+  // Event Callout Styles - Uber-style Compact Card
+  eventCallout: {
+    padding: 8,
+    minWidth: 180,
+    maxWidth: 240,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+  },
+  eventBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginBottom: 5,
+  },
+  eventStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  eventStatusActive: {
+    backgroundColor: 'rgba(52, 199, 89, 0.15)',
+  },
+  eventStatusClosed: {
+    backgroundColor: 'rgba(142, 142, 147, 0.15)',
+  },
+  eventStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  eventStatusDotActive: {
+    backgroundColor: '#34C759',
+  },
+  eventStatusDotClosed: {
+    backgroundColor: '#8E8E93',
+  },
+  eventStatusText: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  eventStatusTextActive: {
+    color: '#34C759',
+  },
+  eventStatusTextClosed: {
+    color: '#8E8E93',
+  },
+  eventUrgentBadge: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  eventTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  eventTypeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: staticColors.primary.main,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  eventCalloutTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  eventMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  eventMetaText: {
+    fontSize: 10,
+    color: staticColors.neutral[600],
+  },
+  eventMetaSeparator: {
+    fontSize: 10,
+    color: staticColors.neutral[400],
+    marginHorizontal: 2,
   },
   emptyOverlay: {
     position: 'absolute',
@@ -738,10 +932,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  urgentTitle: {
-    color: '#FF3B30',
-    fontWeight: 'bold',
   },
   eventMarker: {
     width: 16,
@@ -773,6 +963,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  groupChipContainer: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 100,
   },
   routeToggleButton: {
     position: 'absolute',
@@ -806,6 +1001,37 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
     zIndex: 10,
+  },
+  devicesButton: {
+    position: 'absolute',
+    right: 124,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 10,
+  },
+  devicesBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  devicesBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
   },
   menuOverlay: {
     flex: 1,

@@ -9,10 +9,14 @@ import {
   Platform,
   Switch,
   Modal,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { processImageForUpload } from '../utils/imageUtils';
 import { groupApi, Group, GroupMember, phoneLocationApi, api } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useGroupStore } from '../store/useGroupStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -25,6 +29,7 @@ import ActionSheet, { ActionSheetOption } from '../components/ActionSheet';
 export default function GroupDetailScreen({ route, navigation }: any) {
   const { groupId } = route.params;
   const { showSuccess, showError } = useToast();
+  const { theme, isDark } = useTheme();
   const { setActiveGroup } = useGroupStore();
   const [group, setGroup] = useState<(Group & { members: GroupMember[] }) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +41,7 @@ export default function GroupDetailScreen({ route, navigation }: any) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRemoveMemberConfirm, setShowRemoveMemberConfirm] = useState(false);
   const [showPermissionInfo, setShowPermissionInfo] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     loadGroup();
@@ -160,6 +166,59 @@ export default function GroupDetailScreen({ route, navigation }: any) {
     navigation.navigate('GroupInvite', { groupId, groupName: group?.name });
   };
 
+  const handlePickImage = async () => {
+    if (!isAdmin) return;
+
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      showError('Se necesita permiso para acceder a las fotos');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      try {
+        setUploadingImage(true);
+
+        // Resize image before upload (400x400 for group avatars)
+        const processed = await processImageForUpload(result.assets[0].uri, 'AVATAR');
+        console.log('[Group] Image resized:', processed.width, 'x', processed.height);
+
+        const formData = new FormData();
+        const filename = 'photo.jpg';
+        formData.append('image', {
+          uri: processed.uri,
+          type: 'image/jpeg',
+          name: filename,
+        } as any);
+
+        const uploadUrl = `/groups/${groupId}/image`;
+        console.log('[Group] Uploading to:', uploadUrl);
+        console.log('[Group] API base URL:', api.defaults.baseURL);
+
+        const response = await api.put(uploadUrl, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setGroup(response.data);
+        showSuccess('Imagen del grupo actualizada');
+      } catch (error: any) {
+        console.error('[Group] Error uploading image:', error.message);
+        console.error('[Group] Error status:', error.response?.status);
+        console.error('[Group] Error data:', error.response?.data);
+        console.error('[Group] Request URL:', error.config?.baseURL + error.config?.url);
+        showError('No se pudo subir la imagen');
+      } finally {
+        setUploadingImage(false);
+      }
+    }
+  };
+
   const handleLeave = () => {
     if (!group) return;
     setShowLeaveConfirm(true);
@@ -228,9 +287,9 @@ export default function GroupDetailScreen({ route, navigation }: any) {
 
   if (loading || !group) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando grupo...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando grupo...</Text>
       </View>
     );
   }
@@ -239,31 +298,51 @@ export default function GroupDetailScreen({ route, navigation }: any) {
   const isCreator = group.creatorId === currentUserId;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Grupo</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Grupo</Text>
         <View style={styles.headerButton} />
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Group Info */}
-        <View style={styles.groupHeader}>
-          <View style={styles.groupIcon}>
-            <Ionicons name="people" size={40} color="#007AFF" />
-          </View>
-          <Text style={styles.groupName}>{group.name}</Text>
-          {group.description ? (
-            <Text style={styles.groupDescription}>{group.description}</Text>
-          ) : null}
-          <View style={styles.roleContainer}>
-            <View style={[styles.roleBadge, isAdmin && styles.adminRoleBadge]}>
+        {/* Group Info - Compact Header */}
+        <View style={[styles.groupHeader, { backgroundColor: theme.surface }]}>
+          <TouchableOpacity
+            style={styles.groupImageContainer}
+            onPress={isAdmin ? handlePickImage : undefined}
+            disabled={!isAdmin || uploadingImage}
+            activeOpacity={isAdmin ? 0.7 : 1}
+          >
+            {group.imageUrl ? (
+              <Image source={{ uri: group.imageUrl }} style={styles.groupImage} />
+            ) : (
+              <View style={[styles.groupImagePlaceholder, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E8F4FF' }]}>
+                <Ionicons name="people" size={32} color={theme.primary.main} />
+              </View>
+            )}
+            {isAdmin && (
+              <View style={styles.editImageBadge}>
+                {uploadingImage ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={12} color="#fff" />
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
+          <View style={styles.groupHeaderInfo}>
+            <Text style={[styles.groupName, { color: theme.text }]}>{group.name}</Text>
+            {group.description ? (
+              <Text style={[styles.groupDescription, { color: theme.textSecondary }]} numberOfLines={1}>{group.description}</Text>
+            ) : null}
+            <View style={[styles.roleBadge, { backgroundColor: isDark ? 'rgba(142, 142, 147, 0.3)' : '#E5E5E5' }, isAdmin && styles.adminRoleBadge]}>
               <Text style={styles.roleText}>
                 {isAdmin ? 'Administrador' : 'Miembro'}
               </Text>
@@ -293,17 +372,17 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         </View>
 
         {/* Location Sharing Toggle */}
-        <View style={styles.section}>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Ionicons
                 name={locationSharing ? 'location' : 'location-outline'}
                 size={24}
-                color={locationSharing ? '#34C759' : '#8E8E93'}
+                color={locationSharing ? '#34C759' : theme.textSecondary}
               />
               <View style={styles.settingTextContainer}>
-                <Text style={styles.settingLabel}>Compartir mi ubicación</Text>
-                <Text style={styles.settingDescription}>
+                <Text style={[styles.settingLabel, { color: theme.text }]}>Compartir mi ubicación</Text>
+                <Text style={[styles.settingDescription, { color: theme.textSecondary }]}>
                   {locationSharing
                     ? 'Tu ubicación es visible para el grupo'
                     : 'Tu ubicación está oculta'}
@@ -313,21 +392,21 @@ export default function GroupDetailScreen({ route, navigation }: any) {
             <Switch
               value={locationSharing}
               onValueChange={handleToggleLocationSharing}
-              trackColor={{ false: '#E5E5E5', true: '#34C759' }}
+              trackColor={{ false: isDark ? '#3A3A3C' : '#E5E5E5', true: '#34C759' }}
               thumbColor="#fff"
             />
           </View>
         </View>
 
         {/* Members */}
-        <View style={styles.section}>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Miembros ({group.members?.length || 0})
             </Text>
             {isAdmin ? (
               <TouchableOpacity onPress={handleInvite}>
-                <Ionicons name="person-add" size={22} color="#007AFF" />
+                <Ionicons name="person-add" size={22} color={theme.primary.main} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -337,13 +416,17 @@ export default function GroupDetailScreen({ route, navigation }: any) {
             const isSelf = member.userId === currentUserId;
 
             return (
-              <View key={member.id} style={styles.memberRow}>
-                <View style={styles.memberAvatar}>
-                  <Ionicons name="person-circle" size={44} color="#C7C7CC" />
-                </View>
+              <View key={member.id} style={[styles.memberRow, { borderTopColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}>
+                {member.user.imageUrl ? (
+                  <Image source={{ uri: member.user.imageUrl }} style={styles.memberAvatarImage} />
+                ) : (
+                  <View style={styles.memberAvatar}>
+                    <Ionicons name="person-circle" size={44} color={isDark ? '#636366' : '#C7C7CC'} />
+                  </View>
+                )}
                 <View style={styles.memberInfo}>
                   <View style={styles.memberNameRow}>
-                    <Text style={styles.memberName}>
+                    <Text style={[styles.memberName, { color: theme.text }]}>
                       {member.user.name}
                       {isSelf ? ' (Tú)' : ''}
                     </Text>
@@ -357,7 +440,7 @@ export default function GroupDetailScreen({ route, navigation }: any) {
                       </View>
                     ) : null}
                   </View>
-                  <Text style={styles.memberEmail}>{member.user.email}</Text>
+                  <Text style={[styles.memberEmail, { color: theme.textSecondary }]}>{member.user.email}</Text>
                   {member.locationSharingEnabled ? (
                     <View style={styles.sharingIndicator}>
                       <Ionicons name="location" size={12} color="#34C759" />
@@ -366,15 +449,17 @@ export default function GroupDetailScreen({ route, navigation }: any) {
                   ) : null}
                 </View>
                 <View style={styles.memberActions}>
-                  {/* Chat button - show for all members except self */}
-                  {!isSelf && (
-                    <TouchableOpacity
-                      style={styles.memberChatButton}
-                      onPress={() => handleMemberChat(member)}
-                    >
-                      <Ionicons name="chatbubble-outline" size={20} color="#007AFF" />
-                    </TouchableOpacity>
-                  )}
+                  {/* Chat button - show for all members including self (Saved Messages) */}
+                  <TouchableOpacity
+                    style={styles.memberChatButton}
+                    onPress={() => handleMemberChat(member)}
+                  >
+                    <Ionicons
+                      name={isSelf ? "bookmark-outline" : "chatbubble-outline"}
+                      size={20}
+                      color={isSelf ? "#FF9500" : theme.primary.main}
+                    />
+                  </TouchableOpacity>
                   {/* Admin actions button */}
                   {isAdmin && !isSelf && !isMemberCreator ? (
                     <TouchableOpacity
@@ -384,7 +469,7 @@ export default function GroupDetailScreen({ route, navigation }: any) {
                         setShowMemberActions(true);
                       }}
                     >
-                      <Ionicons name="ellipsis-vertical" size={20} color="#8E8E93" />
+                      <Ionicons name="ellipsis-vertical" size={20} color={theme.textSecondary} />
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -396,7 +481,7 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         {/* Actions */}
         <View style={styles.actionsSection}>
           {!isCreator ? (
-            <TouchableOpacity style={styles.leaveButton} onPress={handleLeave}>
+            <TouchableOpacity style={[styles.leaveButton, { backgroundColor: theme.surface }]} onPress={handleLeave}>
               <Ionicons name="exit-outline" size={20} color="#FF3B30" />
               <Text style={styles.leaveButtonText}>Salir del grupo</Text>
             </TouchableOpacity>
@@ -404,7 +489,7 @@ export default function GroupDetailScreen({ route, navigation }: any) {
 
           {isCreator ? (
             <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+              <Ionicons name="trash-outline" size={20} color="#fff" />
               <Text style={styles.deleteButtonText}>Eliminar grupo</Text>
             </TouchableOpacity>
           ) : null}
@@ -446,20 +531,20 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowLeaveConfirm(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={[styles.confirmIconContainer, { backgroundColor: '#FFF3E0' }]}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(255, 149, 0, 0.2)' : '#FFF3E0' }]}>
               <Ionicons name="exit-outline" size={32} color="#FF9500" />
             </View>
-            <Text style={styles.confirmTitle}>Salir del Grupo</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Salir del Grupo</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               ¿Estás seguro de que quieres salir de "{group?.name}"?
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.confirmCancelButton}
+                style={[styles.confirmCancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => setShowLeaveConfirm(false)}
               >
-                <Text style={styles.confirmCancelText}>Cancelar</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.confirmActionButton, { backgroundColor: '#FF9500' }]}
@@ -480,20 +565,20 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowDeleteConfirm(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmIconContainer}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFEBEE' }]}>
               <Ionicons name="trash" size={32} color="#FF3B30" />
             </View>
-            <Text style={styles.confirmTitle}>Eliminar Grupo</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Eliminar Grupo</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               ¿Estás seguro de que quieres eliminar "{group?.name}"? Esta acción no se puede deshacer.
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.confirmCancelButton}
+                style={[styles.confirmCancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={styles.confirmCancelText}>Cancelar</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmActionButton}
@@ -514,23 +599,23 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowRemoveMemberConfirm(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmIconContainer}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFEBEE' }]}>
               <Ionicons name="person-remove" size={32} color="#FF3B30" />
             </View>
-            <Text style={styles.confirmTitle}>Remover Miembro</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Remover Miembro</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               ¿Estás seguro de que quieres remover a {selectedMember?.user.name} del grupo?
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.confirmCancelButton}
+                style={[styles.confirmCancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => {
                   setShowRemoveMemberConfirm(false);
                   setSelectedMember(null);
                 }}
               >
-                <Text style={styles.confirmCancelText}>Cancelar</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmActionButton}
@@ -551,20 +636,20 @@ export default function GroupDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowPermissionInfo(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={[styles.confirmIconContainer, { backgroundColor: '#E3F2FD' }]}>
-              <Ionicons name="location" size={32} color="#007AFF" />
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E3F2FD' }]}>
+              <Ionicons name="location" size={32} color={theme.primary.main} />
             </View>
-            <Text style={styles.confirmTitle}>Permisos requeridos</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Permisos requeridos</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               Para compartir tu ubicación, necesitas permitir el acceso a la ubicación en segundo plano. Por favor, habilita los permisos en la configuración de la app.
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={[styles.confirmCancelButton, { flex: 1 }]}
+                style={[styles.confirmCancelButton, { flex: 1, backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => setShowPermissionInfo(false)}
               >
-                <Text style={[styles.confirmCancelText, { color: '#007AFF' }]}>Entendido</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.primary.main }]}>Entendido</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -615,46 +700,67 @@ const styles = StyleSheet.create({
   },
   groupHeader: {
     backgroundColor: '#fff',
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    gap: 14,
   },
-  groupIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  groupImageContainer: {
+    position: 'relative',
+  },
+  groupImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  groupImagePlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#E8F4FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+  },
+  editImageBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  groupHeaderInfo: {
+    flex: 1,
+    gap: 4,
   },
   groupName: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '700',
     color: '#262626',
-    textAlign: 'center',
-    marginBottom: 8,
   },
   groupDescription: {
-    fontSize: 15,
+    fontSize: 13,
     color: '#666',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  roleContainer: {
-    marginTop: 8,
   },
   roleBadge: {
     backgroundColor: '#E5E5E5',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
   },
   adminRoleBadge: {
     backgroundColor: '#007AFF',
   },
   roleText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#fff',
   },
@@ -743,6 +849,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#F0F0F0',
   },
   memberAvatar: {
+    marginRight: 12,
+  },
+  memberAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   memberInfo: {

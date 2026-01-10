@@ -17,6 +17,7 @@ import { es } from 'date-fns/locale';
 import { foundChatsApi, FoundObjectChat } from '../services/api';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useTheme } from '../contexts/ThemeContext';
+import UserAvatar from '../components/UserAvatar';
 
 // Animated status dot component
 const StatusDot = ({ status, color }: { status: string; color: string }) => {
@@ -106,7 +107,7 @@ const getInitials = (name: string): string => {
 
 export function FoundChatsScreen() {
   const navigation = useNavigation();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [chats, setChats] = useState<FoundObjectChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -166,8 +167,8 @@ export function FoundChatsScreen() {
         style={[
           styles.chatCard,
           {
-            backgroundColor: hasUnread ? theme.primary.subtle : theme.bg.primary,
-            borderBottomColor: theme.glass.border,
+            backgroundColor: hasUnread ? theme.primary.subtle : theme.surface,
+            borderBottomColor: theme.border,
           },
         ]}
         onPress={() => handleChatPress(item)}
@@ -175,9 +176,11 @@ export function FoundChatsScreen() {
       >
         {/* Avatar with initials and status dot */}
         <View style={styles.avatarContainer}>
-          <View style={[styles.avatar, { backgroundColor: '#FF9500' }]}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
+          <UserAvatar
+            name={finderDisplay}
+            size={48}
+            backgroundColor="#FF9500"
+          />
           <StatusDot status={item.status} color={statusConfig.color} />
         </View>
 
@@ -187,14 +190,14 @@ export function FoundChatsScreen() {
             <Text
               style={[
                 styles.deviceTitle,
-                { color: theme.text.primary },
+                { color: theme.text },
                 hasUnread && styles.deviceTitleUnread
               ]}
               numberOfLines={1}
             >
               {deviceName}
             </Text>
-            <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.text.tertiary }]}>
+            <Text style={[styles.timeAgo, { color: hasUnread ? theme.primary.main : theme.textTertiary }]}>
               {timeAgo}
             </Text>
           </View>
@@ -203,7 +206,7 @@ export function FoundChatsScreen() {
             <Text
               style={[
                 styles.lastMessage,
-                { color: hasUnread ? theme.text.primary : theme.text.secondary },
+                { color: hasUnread ? theme.text : theme.textSecondary },
                 hasUnread && styles.lastMessageUnread
               ]}
               numberOfLines={1}
@@ -232,15 +235,15 @@ export function FoundChatsScreen() {
       style={[
         styles.filterButton,
         {
-          backgroundColor: filter === value ? theme.primary.main : theme.bg.primary,
-          borderColor: filter === value ? theme.primary.main : theme.glass.border,
+          backgroundColor: filter === value ? theme.primary.main : theme.surface,
+          borderColor: filter === value ? theme.primary.main : theme.border,
         }
       ]}
       onPress={() => setFilter(value)}
     >
       <Text style={[
         styles.filterButtonText,
-        { color: filter === value ? '#fff' : theme.text.secondary }
+        { color: filter === value ? '#fff' : theme.textSecondary }
       ]}>
         {label}
       </Text>
@@ -249,7 +252,7 @@ export function FoundChatsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
+      <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
         <ScreenHeader
           title="Objetos Encontrados"
           subtitle={`${chats.length} chats`}
@@ -262,14 +265,14 @@ export function FoundChatsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
       <ScreenHeader
         title="Objetos Encontrados"
         subtitle={`${chats.length} ${chats.length === 1 ? 'chat' : 'chats'}`}
       />
 
       {/* Filter Tabs */}
-      <View style={[styles.filterContainer, { backgroundColor: theme.bg.primary }]}>
+      <View style={[styles.filterContainer, { backgroundColor: theme.surface }]}>
         <FilterButton value="all" label="Todos" />
         <FilterButton value="ACTIVE" label="Activos" />
         <FilterButton value="RESOLVED" label="Recuperados" />
@@ -289,15 +292,15 @@ export function FoundChatsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: theme.glass.bg }]}>
-              <Ionicons name="search-outline" size={48} color={theme.text.tertiary} />
+            <View style={[styles.emptyIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}>
+              <Ionicons name="search-outline" size={48} color={theme.textTertiary} />
             </View>
-            <Text style={[styles.emptyStateTitle, { color: theme.text.primary }]}>
+            <Text style={[styles.emptyStateTitle, { color: theme.text }]}>
               {filter === 'all'
                 ? 'No hay chats de objetos encontrados'
                 : `No hay chats ${STATUS_CONFIG[filter as keyof typeof STATUS_CONFIG]?.label.toLowerCase()}`}
             </Text>
-            <Text style={[styles.emptyStateMessage, { color: theme.text.secondary }]}>
+            <Text style={[styles.emptyStateMessage, { color: theme.textSecondary }]}>
               Cuando alguien escanee el QR de tus objetos, los chats apareceran aqui
             </Text>
           </View>

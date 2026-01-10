@@ -8,6 +8,7 @@ import {
   FlatList,
   TextInput,
   Pressable,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -17,6 +18,7 @@ interface GroupPosition {
   deviceName: string;
   memberId: string;
   memberName: string;
+  memberImageUrl?: string;
   latitude: number;
   longitude: number;
   timestamp: string;
@@ -53,6 +55,7 @@ export default function GroupMembersModal({
     const members = Array.from(memberMap.entries()).map(([memberId, memberPositions]) => ({
       memberId,
       memberName: memberPositions[0].memberName,
+      memberImageUrl: memberPositions[0].memberImageUrl,
       positions: memberPositions,
     }));
 
@@ -80,7 +83,7 @@ export default function GroupMembersModal({
     return date.toLocaleDateString('es');
   };
 
-  const renderMemberItem = ({ item }: { item: { memberId: string; memberName: string; positions: GroupPosition[] } }) => {
+  const renderMemberItem = ({ item }: { item: { memberId: string; memberName: string; memberImageUrl?: string; positions: GroupPosition[] } }) => {
     const initial = item.memberName?.charAt(0)?.toUpperCase() || '?';
     const latestPosition = item.positions.reduce((latest, pos) => {
       return new Date(pos.timestamp) > new Date(latest.timestamp) ? pos : latest;
@@ -95,9 +98,13 @@ export default function GroupMembersModal({
         }}
         activeOpacity={0.7}
       >
-        <View style={styles.memberAvatar}>
-          <Text style={styles.memberInitial}>{initial}</Text>
-        </View>
+        {item.memberImageUrl ? (
+          <Image source={{ uri: item.memberImageUrl }} style={styles.memberAvatarImage} />
+        ) : (
+          <View style={styles.memberAvatar}>
+            <Text style={styles.memberInitial}>{initial}</Text>
+          </View>
+        )}
         <View style={styles.memberInfo}>
           <Text style={styles.memberName}>{item.memberName}</Text>
           <View style={styles.memberMeta}>
@@ -268,6 +275,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
+  },
+  memberAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   memberInitial: {

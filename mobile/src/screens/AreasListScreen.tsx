@@ -12,9 +12,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { areaApi, AreaOfInterest, api } from '../services/api';
 import { useMapStore } from '../store/useMapStore';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
+import { FadeInView } from '../components/FadeInView';
 
 export default function AreasListScreen({ navigation, route }: any) {
   const { showSuccess, showError } = useToast();
+  const { theme, isDark } = useTheme();
   const [areas, setAreas] = useState<AreaOfInterest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,7 +97,7 @@ export default function AreasListScreen({ navigation, route }: any) {
     }
   };
 
-  const renderAreaItem = ({ item }: { item: AreaOfInterest }) => {
+  const renderAreaItem = ({ item, index }: { item: AreaOfInterest; index: number }) => {
     const visibilityLabels = {
       PUBLIC: 'Pública',
       PRIVATE_SHAREABLE: 'Privada (Compartible)',
@@ -111,7 +115,8 @@ export default function AreasListScreen({ navigation, route }: any) {
     const notificationsEnabled = (item as any).notificationsEnabled !== false;
 
     return (
-      <View style={styles.areaCard}>
+      <FadeInView delay={index * 50} duration={350}>
+      <View style={[styles.areaCard, { backgroundColor: theme.surface }]}>
         <TouchableOpacity
           style={styles.areaCardContent}
           onPress={() => navigation.navigate('AreaDetail', { areaId: item.id })}
@@ -120,7 +125,7 @@ export default function AreasListScreen({ navigation, route }: any) {
           <View style={styles.areaHeader}>
             <View style={styles.areaInfo}>
               <View style={styles.areaNameRow}>
-                <Text style={styles.areaName} numberOfLines={1}>{item.name || ''}</Text>
+                <Text style={[styles.areaName, { color: theme.text }]} numberOfLines={1}>{item.name || ''}</Text>
                 {hasPendingRequests ? (
                   <View style={styles.pendingBadge}>
                     <Text style={styles.pendingBadgeText}>{item.pendingRequestsCount}</Text>
@@ -133,7 +138,7 @@ export default function AreasListScreen({ navigation, route }: any) {
                 ) : null}
               </View>
               {item.description ? (
-                <Text style={styles.areaDescription} numberOfLines={2}>
+                <Text style={[styles.areaDescription, { color: theme.textSecondary }]} numberOfLines={2}>
                   {item.description}
                 </Text>
               ) : null}
@@ -162,29 +167,29 @@ export default function AreasListScreen({ navigation, route }: any) {
             </View>
             <View style={styles.footerRight}>
               <View style={styles.statItem}>
-                <Ionicons name="people" size={14} color="#8E8E93" />
-                <Text style={styles.statText}>{item.memberCount ?? 0}</Text>
+                <Ionicons name="people" size={14} color={theme.textSecondary} />
+                <Text style={[styles.statText, { color: theme.textSecondary }]}>{item.memberCount ?? 0}</Text>
               </View>
               <View style={styles.statItem}>
-                <Ionicons name="radio" size={14} color="#8E8E93" />
-                <Text style={styles.statText}>{((item.radius || 0) / 1000).toFixed(1)} km</Text>
+                <Ionicons name="radio" size={14} color={theme.textSecondary} />
+                <Text style={[styles.statText, { color: theme.textSecondary }]}>{((item.radius || 0) / 1000).toFixed(1)} km</Text>
               </View>
             </View>
           </View>
         </TouchableOpacity>
 
         {/* Quick Actions Row */}
-        <View style={styles.quickActionsRow}>
+        <View style={[styles.quickActionsRow, { borderTopColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}>
           <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => handleViewOnMap(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="map-outline" size={20} color="#007AFF" />
-            <Text style={styles.quickActionText}>Mapa</Text>
+            <Ionicons name="map-outline" size={20} color={theme.primary.main} />
+            <Text style={[styles.quickActionText, { color: theme.primary.main }]}>Mapa</Text>
           </TouchableOpacity>
 
-          <View style={styles.quickActionDivider} />
+          <View style={[styles.quickActionDivider, { backgroundColor: isDark ? '#3A3A3C' : '#E5E5E5' }]} />
 
           <TouchableOpacity
             style={styles.quickActionButton}
@@ -194,53 +199,57 @@ export default function AreasListScreen({ navigation, route }: any) {
             <Ionicons
               name={notificationsEnabled ? 'notifications' : 'notifications-off-outline'}
               size={20}
-              color={notificationsEnabled ? '#34C759' : '#8E8E93'}
+              color={notificationsEnabled ? '#34C759' : theme.textSecondary}
             />
-            <Text style={[styles.quickActionText, { color: notificationsEnabled ? '#34C759' : '#8E8E93' }]}>
+            <Text style={[styles.quickActionText, { color: notificationsEnabled ? '#34C759' : theme.textSecondary }]}>
               {notificationsEnabled ? 'Activas' : 'Silenciadas'}
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.quickActionDivider} />
+          <View style={[styles.quickActionDivider, { backgroundColor: isDark ? '#3A3A3C' : '#E5E5E5' }]} />
 
           <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => navigation.navigate('AreaDetail', { areaId: item.id })}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
-            <Text style={styles.quickActionText}>Detalles</Text>
+            <Ionicons name="information-circle-outline" size={20} color={theme.textSecondary} />
+            <Text style={[styles.quickActionText, { color: theme.textSecondary }]}>Detalles</Text>
           </TouchableOpacity>
         </View>
       </View>
+      </FadeInView>
     );
   };
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando áreas...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando áreas...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
+      {/* SVG Background Pattern */}
+      <ObjectsPatternBackground />
+
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mis Áreas</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Mis Áreas</Text>
         <TouchableOpacity
           onPress={() => navigation.navigate('CreateArea')}
           style={styles.headerButton}
         >
-          <Ionicons name="add" size={28} color="#007AFF" />
+          <Ionicons name="add" size={28} color={theme.primary.main} />
         </TouchableOpacity>
       </View>
 
@@ -256,13 +265,13 @@ export default function AreasListScreen({ navigation, route }: any) {
         refreshing={refreshing}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="location-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyTitle}>No tienes áreas de interés</Text>
-            <Text style={styles.emptyText}>
+            <Ionicons name="location-outline" size={64} color={theme.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No tienes áreas de interés</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
               Crea una nueva área o busca áreas públicas para unirte
             </Text>
             <TouchableOpacity
-              style={styles.searchButton}
+              style={[styles.searchButton, { backgroundColor: theme.primary.main }]}
               onPress={() => navigation.navigate('AreasSearch')}
             >
               <Ionicons name="search" size={20} color="#fff" />

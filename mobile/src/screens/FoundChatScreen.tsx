@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,14 @@ import {
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { foundChatsApi, FoundChatDetail, FoundObjectMessage, notificationApi } from '../services/api';
+import { wsService } from '../services/websocket';
 import ChatInput from '../components/chat/ChatInput';
 import MessageBubble from '../components/chat/MessageBubble';
 import ActionSheet, { ActionSheetOption } from '../components/ActionSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
+import UserAvatar from '../components/UserAvatar';
 
 // Get initials from name (1-2 characters)
 const getInitials = (name: string): string => {
@@ -62,7 +64,7 @@ export function FoundChatScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { showSuccess, showError } = useToast();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { chatId } = route.params;
 
   const [chat, setChat] = useState<FoundChatDetail | null>(null);
@@ -89,6 +91,46 @@ export function FoundChatScreen() {
     });
     return unsubscribe;
   }, [navigation, chatId]);
+
+  // Listen for real-time messages via WebSocket
+  const handleNewMessage = useCallback((data: any) => {
+    // Check if this message is for this chat (found object chat)
+    if (data.chatId === chatId || data.foundChatId === chatId) {
+      console.log('[FoundChat] New message received via WebSocket:', data);
+
+      // Add the new message to the list if it's not already there
+      const newMessage: FoundObjectMessage = {
+        id: data.messageId || data.id,
+        content: data.content,
+        createdAt: data.createdAt || new Date().toISOString(),
+        isOwner: data.isOwner ?? false,
+      };
+
+      setMessages(prev => {
+        // Check if message already exists
+        if (prev.some(m => m.id === newMessage.id)) {
+          return prev;
+        }
+        return [...prev, newMessage];
+      });
+
+      // Scroll to bottom
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [chatId]);
+
+  useEffect(() => {
+    // Subscribe to WebSocket new_message events
+    wsService.on('new_message', handleNewMessage);
+    wsService.on('found_chat_message', handleNewMessage);
+
+    return () => {
+      wsService.off('new_message', handleNewMessage);
+      wsService.off('found_chat_message', handleNewMessage);
+    };
+  }, [handleNewMessage]);
 
   const loadChat = async () => {
     try {
@@ -204,15 +246,15 @@ export function FoundChatScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg.primary }]}>
-        <View style={[styles.header, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: theme.glass.bg }]}
+            style={[styles.backButton, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="chevron-back" size={24} color={theme.text.primary} />
+            <Ionicons name="chevron-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text.primary }]}>Chat</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Chat</Text>
           <View style={styles.backButton} />
         </View>
         <View style={styles.loadingContainer}>
@@ -230,41 +272,52 @@ export function FoundChatScreen() {
   const canSendMessages = chat.status === 'ACTIVE';
   const initials = getInitials(finderDisplay);
 
+  // Get status colors with dark mode support
+  const getStatusBgColor = (status: string) => {
+    if (status === 'ACTIVE') return isDark ? 'rgba(52, 199, 89, 0.2)' : '#E8F8ED';
+    if (status === 'RESOLVED') return isDark ? 'rgba(0, 122, 255, 0.2)' : '#E3F2FD';
+    return isDark ? 'rgba(142, 142, 147, 0.2)' : '#F2F2F7';
+  };
+
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg.primary }]}
+      style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: theme.glass.bg }]}
+          style={[styles.backButton, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="chevron-back" size={24} color={theme.text.primary} />
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <View style={styles.headerAvatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+          <View style={{ marginRight: 12 }}>
+            <UserAvatar
+              name={finderDisplay}
+              size={40}
+              backgroundColor="#FF9500"
+            />
           </View>
           <View style={styles.headerInfo}>
-            <Text style={[styles.headerTitle, { color: theme.text.primary }]}>{finderDisplay}</Text>
-            <Text style={[styles.headerSubtitle, { color: theme.text.secondary }]}>encontro "{deviceName}"</Text>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>{finderDisplay}</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>encontro "{deviceName}"</Text>
           </View>
         </View>
 
         {chat.status === 'ACTIVE' && (
           <TouchableOpacity
-            style={[styles.menuButton, { backgroundColor: theme.glass.bg }]}
+            style={[styles.menuButton, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}
             onPress={showStatusOptions}
             disabled={updatingStatus}
           >
             {updatingStatus ? (
               <ActivityIndicator size="small" color={theme.primary.main} />
             ) : (
-              <Ionicons name="ellipsis-horizontal" size={24} color={theme.text.primary} />
+              <Ionicons name="ellipsis-horizontal" size={24} color={theme.text} />
             )}
           </TouchableOpacity>
         )}
@@ -273,7 +326,7 @@ export function FoundChatScreen() {
 
       {/* Status Banner */}
       {chat.status !== 'ACTIVE' && (
-        <View style={[styles.statusBanner, { backgroundColor: statusConfig.bgColor }]}>
+        <View style={[styles.statusBanner, { backgroundColor: getStatusBgColor(chat.status) }]}>
           <Ionicons
             name={chat.status === 'RESOLVED' ? 'checkmark-circle' : 'close-circle'}
             size={20}
@@ -288,17 +341,17 @@ export function FoundChatScreen() {
       )}
 
       {/* Device Info Card */}
-      <View style={styles.deviceCard}>
-        <View style={styles.deviceIcon}>
-          <Ionicons name="pricetag" size={20} color="#007AFF" />
+      <View style={[styles.deviceCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}>
+        <View style={[styles.deviceIcon, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E3F2FD' }]}>
+          <Ionicons name="pricetag" size={20} color={theme.primary.main} />
         </View>
         <View style={styles.deviceInfo}>
-          <Text style={styles.deviceCardName}>{deviceName}</Text>
-          <Text style={styles.deviceCardHint}>
+          <Text style={[styles.deviceCardName, { color: theme.text }]}>{deviceName}</Text>
+          <Text style={[styles.deviceCardHint, { color: theme.textSecondary }]}>
             Comparte solo la informacion que desees
           </Text>
         </View>
-        <View style={[styles.statusChip, { backgroundColor: statusConfig.bgColor }]}>
+        <View style={[styles.statusChip, { backgroundColor: getStatusBgColor(chat.status) }]}>
           <Text style={[styles.statusChipText, { color: statusConfig.color }]}>
             {statusConfig.label}
           </Text>
@@ -316,8 +369,8 @@ export function FoundChatScreen() {
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="chatbubbles-outline" size={48} color="#C7C7CC" />
-            <Text style={styles.emptyStateText}>
+            <Ionicons name="chatbubbles-outline" size={48} color={theme.textSecondary} />
+            <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
               Aun no hay mensajes.{'\n'}¡Inicia la conversacion!
             </Text>
           </View>
@@ -332,9 +385,9 @@ export function FoundChatScreen() {
           onTypingStop={() => {}}
         />
       ) : (
-        <View style={styles.closedInput}>
-          <Ionicons name="lock-closed" size={18} color="#8E8E93" />
-          <Text style={styles.closedInputText}>
+        <View style={[styles.closedInput, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+          <Ionicons name="lock-closed" size={18} color={theme.textSecondary} />
+          <Text style={[styles.closedInputText, { color: theme.textSecondary }]}>
             Este chat esta {chat.status === 'RESOLVED' ? 'resuelto' : 'cerrado'}
           </Text>
         </View>
@@ -360,11 +413,14 @@ export function FoundChatScreen() {
           style={styles.modalOverlay}
           onPress={() => setShowConfirmModal(false)}
         >
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.modalContent, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <View style={[
                 styles.modalIconContainer,
-                { backgroundColor: pendingStatus === 'RESOLVED' ? '#E8F8ED' : '#FFE5E5' }
+                { backgroundColor: pendingStatus === 'RESOLVED'
+                    ? (isDark ? 'rgba(52, 199, 89, 0.2)' : '#E8F8ED')
+                    : (isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFE5E5')
+                }
               ]}>
                 <Ionicons
                   name={pendingStatus === 'RESOLVED' ? 'checkmark-circle' : 'close-circle'}
@@ -372,27 +428,27 @@ export function FoundChatScreen() {
                   color={pendingStatus === 'RESOLVED' ? '#34C759' : '#FF3B30'}
                 />
               </View>
-              <Text style={styles.modalTitle}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
                 {pendingStatus === 'RESOLVED'
                   ? 'Marcar como recuperado'
                   : 'Cerrar chat'}
               </Text>
-              <Text style={styles.modalSubtitle}>
+              <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
                 {pendingStatus === 'RESOLVED'
                   ? '¿Has recuperado tu objeto? Esto notificara a quien lo encontro.'
                   : '¿Cerrar este chat? Ya no podras recibir mensajes.'}
               </Text>
             </View>
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { borderTopColor: theme.border }]}>
               <TouchableOpacity
-                style={styles.modalButtonCancel}
+                style={[styles.modalButtonCancel, { borderRightColor: theme.border }]}
                 onPress={() => {
                   setShowConfirmModal(false);
                   setPendingStatus(null);
                 }}
               >
-                <Text style={styles.modalButtonCancelText}>Cancelar</Text>
+                <Text style={[styles.modalButtonCancelText, { color: theme.primary.main }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[

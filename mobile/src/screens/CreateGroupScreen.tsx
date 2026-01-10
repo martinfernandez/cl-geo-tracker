@@ -13,12 +13,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { groupApi } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function CreateGroupScreen({ navigation }: any) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const { showSuccess, showError } = useToast();
+  const { theme, isDark } = useTheme();
 
   const handleCreate = async () => {
     if (!name.trim()) {
@@ -45,29 +47,30 @@ export default function CreateGroupScreen({ navigation }: any) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="close" size={24} color="#262626" />
+          <Ionicons name="close" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nuevo Grupo</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Nuevo Grupo</Text>
         <TouchableOpacity
           onPress={handleCreate}
           style={styles.headerButton}
           disabled={loading || !name.trim()}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#007AFF" />
+            <ActivityIndicator size="small" color={theme.primary.main} />
           ) : (
             <Text
               style={[
                 styles.createText,
+                { color: theme.primary.main },
                 !name.trim() && styles.createTextDisabled,
               ]}
             >
@@ -80,47 +83,47 @@ export default function CreateGroupScreen({ navigation }: any) {
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
         {/* Group Icon */}
         <View style={styles.iconContainer}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="people" size={48} color="#007AFF" />
+          <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E8F4FF' }]}>
+            <Ionicons name="people" size={48} color={theme.primary.main} />
           </View>
         </View>
 
         {/* Name Input */}
         <View style={styles.inputContainer}>
-          <Text style={styles.label}>Nombre del grupo *</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Nombre del grupo *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5', color: theme.text }]}
             value={name}
             onChangeText={setName}
             placeholder="Ej: Familia, Amigos, Trabajo..."
-            placeholderTextColor="#8E8E93"
+            placeholderTextColor={theme.textSecondary}
             maxLength={50}
             autoFocus
           />
-          <Text style={styles.charCount}>{name.length}/50</Text>
+          <Text style={[styles.charCount, { color: theme.textSecondary }]}>{name.length}/50</Text>
         </View>
 
         {/* Description Input */}
         <View style={styles.inputContainer}>
-          <Text style={styles.label}>Descripción (opcional)</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Descripción (opcional)</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5', color: theme.text }]}
             value={description}
             onChangeText={setDescription}
             placeholder="Describe el propósito del grupo..."
-            placeholderTextColor="#8E8E93"
+            placeholderTextColor={theme.textSecondary}
             multiline
             numberOfLines={4}
             maxLength={200}
             textAlignVertical="top"
           />
-          <Text style={styles.charCount}>{description.length}/200</Text>
+          <Text style={[styles.charCount, { color: theme.textSecondary }]}>{description.length}/200</Text>
         </View>
 
         {/* Info */}
-        <View style={styles.infoContainer}>
-          <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
-          <Text style={styles.infoText}>
+        <View style={[styles.infoContainer, { backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5' }]}>
+          <Ionicons name="information-circle-outline" size={20} color={theme.textSecondary} />
+          <Text style={[styles.infoText, { color: theme.textSecondary }]}>
             Los grupos te permiten compartir ubicaciones y dispositivos con personas de confianza.
             Solo los miembros del grupo pueden ver esta información.
           </Text>

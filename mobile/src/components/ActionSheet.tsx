@@ -8,6 +8,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
 
 export interface ActionSheetOption {
   label: string;
@@ -31,6 +32,8 @@ export default function ActionSheet({
   subtitle,
   options,
 }: ActionSheetProps) {
+  const { theme, isDark } = useTheme();
+
   return (
     <Modal
       visible={visible}
@@ -41,19 +44,19 @@ export default function ActionSheet({
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={styles.container} onPress={(e) => e.stopPropagation()}>
           {(title || subtitle) && (
-            <View style={styles.header}>
-              {title && <Text style={styles.title}>{title}</Text>}
-              {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+            <View style={[styles.header, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+              {title && <Text style={[styles.title, { color: theme.textSecondary }]}>{title}</Text>}
+              {subtitle && <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text>}
             </View>
           )}
 
-          <View style={styles.optionsContainer}>
+          <View style={[styles.optionsContainer, { backgroundColor: theme.surface }]}>
             {options.map((option, index) => (
               <TouchableOpacity
                 key={index}
                 style={[
                   styles.option,
-                  index < options.length - 1 && styles.optionBorder,
+                  index < options.length - 1 && [styles.optionBorder, { borderBottomColor: isDark ? '#3A3A3C' : '#C6C6C8' }],
                 ]}
                 onPress={() => {
                   onClose();
@@ -65,14 +68,15 @@ export default function ActionSheet({
                   <Ionicons
                     name={option.icon}
                     size={22}
-                    color={option.destructive ? '#FF3B30' : '#262626'}
+                    color={option.destructive ? theme.error.main : theme.text}
                     style={styles.optionIcon}
                   />
                 )}
                 <Text
                   style={[
                     styles.optionLabel,
-                    option.destructive && styles.optionLabelDestructive,
+                    { color: theme.primary.main },
+                    option.destructive && { color: theme.error.main },
                   ]}
                 >
                   {option.label}
@@ -82,11 +86,11 @@ export default function ActionSheet({
           </View>
 
           <TouchableOpacity
-            style={styles.cancelButton}
+            style={[styles.cancelButton, { backgroundColor: theme.surface }]}
             onPress={onClose}
             activeOpacity={0.7}
           >
-            <Text style={styles.cancelButtonText}>Cancelar</Text>
+            <Text style={[styles.cancelButtonText, { color: theme.primary.main }]}>Cancelar</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>

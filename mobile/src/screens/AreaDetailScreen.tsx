@@ -22,7 +22,7 @@ import { useTheme } from '../contexts/ThemeContext';
 export default function AreaDetailScreen({ route, navigation }: any) {
   const { areaId } = route.params;
   const { showSuccess, showError } = useToast();
-  const { isDark } = useTheme();
+  const { theme, isDark } = useTheme();
   const [area, setArea] = useState<AreaOfInterest | null>(null);
   const [members, setMembers] = useState<AreaMember[]>([]);
   const [joinRequests, setJoinRequests] = useState<AreaInvitation[]>([]);
@@ -173,9 +173,9 @@ export default function AreaDetailScreen({ route, navigation }: any) {
 
   if (loading || !area) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando área...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando área...</Text>
       </View>
     );
   }
@@ -196,22 +196,22 @@ export default function AreaDetailScreen({ route, navigation }: any) {
   const isCreator = area.creatorId === currentUserId;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Detalle del Área</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Detalle del Área</Text>
         {isAdmin && (
           <TouchableOpacity
             onPress={() => setShowActionSheet(true)}
             style={styles.headerButton}
           >
-            <Ionicons name="ellipsis-horizontal" size={24} color="#262626" />
+            <Ionicons name="ellipsis-horizontal" size={24} color={theme.text} />
           </TouchableOpacity>
         )}
         {!isAdmin && <View style={styles.headerSpacer} />}
@@ -262,9 +262,9 @@ export default function AreaDetailScreen({ route, navigation }: any) {
         </View>
 
         {/* Info Section */}
-        <View style={styles.infoSection}>
+        <View style={[styles.infoSection, { backgroundColor: theme.surface }]}>
           <View style={styles.titleRow}>
-            <Text style={styles.areaName}>{area.name}</Text>
+            <Text style={[styles.areaName, { color: theme.text }]}>{area.name}</Text>
             <View
               style={[
                 styles.visibilityBadge,
@@ -278,30 +278,30 @@ export default function AreaDetailScreen({ route, navigation }: any) {
           </View>
 
           {area.description && (
-            <Text style={styles.description}>{area.description}</Text>
+            <Text style={[styles.description, { color: theme.textSecondary }]}>{area.description}</Text>
           )}
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Ionicons name="people" size={20} color="#666" />
-              <Text style={styles.statText}>{area.memberCount} miembros</Text>
+              <Ionicons name="people" size={20} color={theme.textSecondary} />
+              <Text style={[styles.statText, { color: theme.textSecondary }]}>{area.memberCount} miembros</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="radio" size={20} color="#666" />
-              <Text style={styles.statText}>{(area.radius / 1000).toFixed(1)} km</Text>
+              <Ionicons name="radio" size={20} color={theme.textSecondary} />
+              <Text style={[styles.statText, { color: theme.textSecondary }]}>{(area.radius / 1000).toFixed(1)} km</Text>
             </View>
           </View>
 
           <View style={styles.creatorRow}>
-            <Ionicons name="person" size={16} color="#666" />
-            <Text style={styles.creatorText}>
+            <Ionicons name="person" size={16} color={theme.textSecondary} />
+            <Text style={[styles.creatorText, { color: theme.textSecondary }]}>
               Creado por {area.creator.name}
             </Text>
           </View>
 
           {area.userRole && (
             <View style={styles.roleContainer}>
-              <Text style={styles.roleLabel}>Tu rol:</Text>
+              <Text style={[styles.roleLabel, { color: theme.textSecondary }]}>Tu rol:</Text>
               <View style={styles.roleBadge}>
                 <Text style={styles.roleText}>
                   {area.userRole === 'ADMIN' ? 'Administrador' : 'Miembro'}
@@ -312,16 +312,16 @@ export default function AreaDetailScreen({ route, navigation }: any) {
 
           {/* Notifications Toggle */}
           {area.isMember && (
-            <View style={styles.notificationContainer}>
+            <View style={[styles.notificationContainer, { borderTopColor: isDark ? '#3A3A3C' : '#f0f0f0' }]}>
               <View style={styles.notificationInfo}>
                 <Ionicons
                   name={notificationsEnabled ? 'notifications' : 'notifications-off'}
                   size={22}
-                  color={notificationsEnabled ? '#007AFF' : '#8E8E93'}
+                  color={notificationsEnabled ? theme.primary.main : theme.textSecondary}
                 />
                 <View style={styles.notificationTextContainer}>
-                  <Text style={styles.notificationLabel}>Notificaciones</Text>
-                  <Text style={styles.notificationDescription}>
+                  <Text style={[styles.notificationLabel, { color: theme.text }]}>Notificaciones</Text>
+                  <Text style={[styles.notificationDescription, { color: theme.textSecondary }]}>
                     {notificationsEnabled
                       ? 'Recibirás alertas de nuevos eventos en esta área'
                       : 'Las notificaciones están silenciadas'}
@@ -331,7 +331,7 @@ export default function AreaDetailScreen({ route, navigation }: any) {
               <Switch
                 value={notificationsEnabled}
                 onValueChange={handleToggleNotifications}
-                trackColor={{ false: '#E5E5E5', true: '#34C759' }}
+                trackColor={{ false: isDark ? '#3A3A3C' : '#E5E5E5', true: '#34C759' }}
                 thumbColor="#fff"
               />
             </View>
@@ -340,8 +340,8 @@ export default function AreaDetailScreen({ route, navigation }: any) {
 
         {/* Join Requests (Admin only) */}
         {isAdmin && joinRequests.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Solicitudes Pendientes</Text>
+          <View style={[styles.section, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Solicitudes Pendientes</Text>
             {joinRequests.map((request) => {
               const requestDate = new Date(request.createdAt);
               const formattedDate = requestDate.toLocaleDateString('es-ES', {
@@ -355,17 +355,17 @@ export default function AreaDetailScreen({ route, navigation }: any) {
               });
 
               return (
-                <View key={request.id} style={styles.requestCard}>
+                <View key={request.id} style={[styles.requestCard, { borderBottomColor: isDark ? '#3A3A3C' : '#f0f0f0' }]}>
                   <View style={styles.requestInfo}>
-                    <Ionicons name="person-circle" size={48} color="#007AFF" />
+                    <Ionicons name="person-circle" size={48} color={theme.primary.main} />
                     <View style={styles.requestDetails}>
-                      <Text style={styles.requestName}>
+                      <Text style={[styles.requestName, { color: theme.text }]}>
                         {request.sender?.name || 'Usuario desconocido'}
                       </Text>
-                      <Text style={styles.requestEmail}>
+                      <Text style={[styles.requestEmail, { color: theme.textSecondary }]}>
                         {request.sender?.email}
                       </Text>
-                      <Text style={styles.requestDate}>
+                      <Text style={[styles.requestDate, { color: theme.textSecondary }]}>
                         {formattedDate} • {formattedTime}
                       </Text>
                     </View>
@@ -392,7 +392,7 @@ export default function AreaDetailScreen({ route, navigation }: any) {
 
         {/* Leave Button */}
         {!isCreator && area.isMember && (
-          <TouchableOpacity style={styles.leaveButton} onPress={handleLeave}>
+          <TouchableOpacity style={[styles.leaveButton, { backgroundColor: theme.surface }]} onPress={handleLeave}>
             <Ionicons name="exit-outline" size={20} color="#FF3B30" />
             <Text style={styles.leaveButtonText}>Salir del Área</Text>
           </TouchableOpacity>
@@ -411,21 +411,21 @@ export default function AreaDetailScreen({ route, navigation }: any) {
           activeOpacity={1}
           onPress={() => setShowActionSheet(false)}
         >
-          <View style={styles.actionSheet}>
-            <View style={styles.actionSheetHandle} />
+          <View style={[styles.actionSheet, { backgroundColor: isDark ? '#2C2C2E' : '#f8f8f8' }]}>
+            <View style={[styles.actionSheetHandle, { backgroundColor: isDark ? '#5A5A5E' : '#c7c7c7' }]} />
             <TouchableOpacity
-              style={styles.actionSheetItem}
+              style={[styles.actionSheetItem, { backgroundColor: theme.surface }]}
               onPress={() => {
                 setShowActionSheet(false);
                 // Navigate to edit screen when implemented
                 Alert.alert('Próximamente', 'Función de edición en desarrollo');
               }}
             >
-              <Ionicons name="pencil" size={24} color="#007AFF" />
-              <Text style={styles.actionSheetItemText}>Editar Área</Text>
+              <Ionicons name="pencil" size={24} color={theme.primary.main} />
+              <Text style={[styles.actionSheetItemText, { color: theme.primary.main }]}>Editar Área</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionSheetItem, styles.actionSheetItemDanger]}
+              style={[styles.actionSheetItem, styles.actionSheetItemDanger, { backgroundColor: theme.surface }]}
               onPress={() => {
                 setShowActionSheet(false);
                 handleDelete();
@@ -435,10 +435,10 @@ export default function AreaDetailScreen({ route, navigation }: any) {
               <Text style={styles.actionSheetItemTextDanger}>Eliminar Área</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.actionSheetCancel}
+              style={[styles.actionSheetCancel, { backgroundColor: theme.surface }]}
               onPress={() => setShowActionSheet(false)}
             >
-              <Text style={styles.actionSheetCancelText}>Cancelar</Text>
+              <Text style={[styles.actionSheetCancelText, { color: theme.primary.main }]}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -452,20 +452,20 @@ export default function AreaDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowDeleteConfirm(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmIconContainer}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFEBEE' }]}>
               <Ionicons name="trash" size={32} color="#FF3B30" />
             </View>
-            <Text style={styles.confirmTitle}>Eliminar Área</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Eliminar Área</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               ¿Estás seguro de que quieres eliminar "{area?.name}"? Esta acción no se puede deshacer.
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.confirmCancelButton}
+                style={[styles.confirmCancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={styles.confirmCancelText}>Cancelar</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmDeleteButton}
@@ -486,20 +486,20 @@ export default function AreaDetailScreen({ route, navigation }: any) {
         onRequestClose={() => setShowLeaveConfirm(false)}
       >
         <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={[styles.confirmIconContainer, { backgroundColor: '#FFF3E0' }]}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.surface }]}>
+            <View style={[styles.confirmIconContainer, { backgroundColor: isDark ? 'rgba(255, 149, 0, 0.2)' : '#FFF3E0' }]}>
               <Ionicons name="exit-outline" size={32} color="#FF9500" />
             </View>
-            <Text style={styles.confirmTitle}>Salir del Área</Text>
-            <Text style={styles.confirmMessage}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Salir del Área</Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
               ¿Estás seguro de que quieres salir de "{area?.name}"?
             </Text>
             <View style={styles.confirmButtons}>
               <TouchableOpacity
-                style={styles.confirmCancelButton}
+                style={[styles.confirmCancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#F2F2F7' }]}
                 onPress={() => setShowLeaveConfirm(false)}
               >
-                <Text style={styles.confirmCancelText}>Cancelar</Text>
+                <Text style={[styles.confirmCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.confirmDeleteButton, { backgroundColor: '#FF9500' }]}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -18,13 +18,21 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { eventApi, deviceApi, groupApi, phoneLocationApi } from '../services/api';
-import { startBackgroundTracking } from '../services/backgroundLocation';
+import { startForegroundTracking } from '../services/backgroundLocation';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import MapLocationPicker from '../components/MapLocationPicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { processImageForUpload } from '../utils/imageUtils';
+import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
+
+type RouteParams = {
+  AddEvent: {
+    deviceId?: string;
+  };
+};
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -43,7 +51,33 @@ const EVENT_TYPES = [
 export default function AddEventScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { showSuccess, showError } = useToast();
-  const { isDark } = useTheme();
+  const { theme, isDark } = useTheme();
+  const route = useRoute<RouteProp<RouteParams, 'AddEvent'>>();
+  const preselectedDeviceId = route.params?.deviceId;
+  const parentNavigation = useNavigation();
+
+  // Hide tab bar when this screen is focused
+  useLayoutEffect(() => {
+    const parent = parentNavigation.getParent();
+    if (parent) {
+      parent.setOptions({ tabBarStyle: { display: 'none' } });
+    }
+    return () => {
+      if (parent) {
+        // Restore tab bar with theme colors
+        parent.setOptions({
+          tabBarStyle: {
+            backgroundColor: theme.surface,
+            borderTopWidth: 1,
+            borderTopColor: theme.border,
+            height: 85,
+            paddingBottom: 20,
+            paddingTop: 12,
+          },
+        });
+      }
+    };
+  }, [parentNavigation, theme]);
 
   // Step state: 0 = details, 1 = location (type selection is inline now)
   const [currentStep, setCurrentStep] = useState(0);
@@ -69,29 +103,38 @@ export default function AddEventScreen({ navigation }: Props) {
   const [realTimeTracking, setRealTimeTracking] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isUrgent, setIsUrgent] = useState(false);
+  const [loadingDeviceLocation, setLoadingDeviceLocation] = useState(false);
+  const [deviceLocationError, setDeviceLocationError] = useState<string | null>(null);
+  const [lastPositionTime, setLastPositionTime] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      // Reset form
+      // Reset form - but don't reset device selection if preselected via params
       setCurrentStep(0);
       setEventType('GENERAL');
       setDescription('');
       setImageUri(null);
       setLocation(null);
-      setSelectedDevice('');
-      setUsePhoneDevice(false);
+      // Only reset device selection if not preselected
+      if (!preselectedDeviceId) {
+        setSelectedDevice('');
+        setUsePhoneDevice(false);
+        setRealTimeTracking(false);
+      }
       setSelectedGroup(null);
       setIsPublic(true);
-      setRealTimeTracking(false);
       setDeviceLocation(null);
       setIsUrgent(false);
+      setLoadingDeviceLocation(false);
+      setDeviceLocationError(null);
+      setLastPositionTime(null);
       slideAnim.setValue(0);
 
       // Load data
       loadDevices();
       loadAdminGroups();
       loadPhoneDevice();
-    }, [])
+    }, [preselectedDeviceId])
   );
 
   useEffect(() => {
@@ -99,11 +142,20 @@ export default function AddEventScreen({ navigation }: Props) {
   }, []);
 
   // Get location when entering step 1
+  // Only get phone's current location if NOT using a GPS device with real-time tracking
   useEffect(() => {
     if (currentStep === 1 && !location) {
-      getCurrentLocation();
+      // If using GPS device with real-time tracking, load device location instead
+      if (selectedDevice && realTimeTracking) {
+        console.log('[AddEvent] Step 1: Loading device location for selectedDevice:', selectedDevice);
+        loadDeviceLocation(selectedDevice);
+      } else if (!usePhoneDevice || !realTimeTracking) {
+        // Only get phone's location if not using real-time tracking at all
+        console.log('[AddEvent] Step 1: Getting phone location (no device tracking)');
+        getCurrentLocation();
+      }
     }
-  }, [currentStep]);
+  }, [currentStep, selectedDevice, realTimeTracking, usePhoneDevice]);
 
   const requestPermissions = async () => {
     await ImagePicker.requestCameraPermissionsAsync();
@@ -115,6 +167,17 @@ export default function AddEventScreen({ navigation }: Props) {
     try {
       const data = await deviceApi.getAll();
       setDevices(data);
+
+      // If a device was preselected via route params, select it
+      if (preselectedDeviceId) {
+        const preselectedDevice = data.find((d: any) => d.id === preselectedDeviceId);
+        if (preselectedDevice) {
+          setSelectedDevice(preselectedDeviceId);
+          setUsePhoneDevice(false);
+          setRealTimeTracking(true);
+          return; // Skip default selection logic
+        }
+      }
 
       // If no GPS tracker devices, default to phone device
       const gpsTrackers = data.filter((d: any) => d.type === 'GPS_TRACKER');
@@ -164,21 +227,60 @@ export default function AddEventScreen({ navigation }: Props) {
   };
 
   const loadDeviceLocation = async (deviceId: string) => {
+    console.log('[AddEvent] Loading device location for:', deviceId);
+    setLoadingDeviceLocation(true);
+    setDeviceLocationError(null);
+    setLastPositionTime(null);
+
     try {
-      const device = devices.find(d => d.id === deviceId);
-      if (device?.lastPosition) {
+      // Always fetch fresh data from API to get the most recent position
+      console.log('[AddEvent] Fetching device from API...');
+      const device = await deviceApi.getById(deviceId);
+      console.log('[AddEvent] Device response:', {
+        id: device?.id,
+        name: device?.name,
+        positionsCount: device?.positions?.length || 0,
+      });
+
+      // The backend returns device.positions as an array (sorted by timestamp desc, take 10)
+      // We use positions[0] which is the most recent position
+      if (device?.positions && device.positions.length > 0) {
+        const lastPosition = device.positions[0];
+        console.log('[AddEvent] Device has position:', {
+          latitude: lastPosition.latitude,
+          longitude: lastPosition.longitude,
+          timestamp: lastPosition.timestamp,
+        });
+
         setDeviceLocation({
-          latitude: device.lastPosition.latitude,
-          longitude: device.lastPosition.longitude,
+          latitude: lastPosition.latitude,
+          longitude: lastPosition.longitude,
         });
-        // When real-time tracking, use device location
         setLocation({
-          latitude: device.lastPosition.latitude,
-          longitude: device.lastPosition.longitude,
+          latitude: lastPosition.latitude,
+          longitude: lastPosition.longitude,
         });
+
+        // Store timestamp to show how recent the position is
+        if (lastPosition.timestamp) {
+          setLastPositionTime(lastPosition.timestamp);
+        }
+
+        setDeviceLocationError(null);
+      } else {
+        // No positions at all - device has never reported
+        console.warn('[AddEvent] Device has no positions:', deviceId);
+        setDeviceLocationError('El dispositivo no tiene ubicacion registrada. Puede estar apagado o sin bateria.');
+        setDeviceLocation(null);
+        setLocation(null);
       }
     } catch (error) {
-      console.error('Error loading device location:', error);
+      console.error('[AddEvent] Error loading device location:', error);
+      setDeviceLocationError('Error al obtener la ubicacion del dispositivo. Intenta de nuevo.');
+      setDeviceLocation(null);
+      setLocation(null);
+    } finally {
+      setLoadingDeviceLocation(false);
     }
   };
 
@@ -282,7 +384,11 @@ export default function AddEventScreen({ navigation }: Props) {
       if (imageUri) {
         console.log('[AddEvent] Uploading image...');
         try {
-          imageUrl = await eventApi.uploadImage(imageUri);
+          // Resize image before upload (1200x1200 for event feed images)
+          const processed = await processImageForUpload(imageUri, 'EVENT');
+          console.log('[AddEvent] Image resized:', processed.width, 'x', processed.height);
+
+          imageUrl = await eventApi.uploadImage(processed.uri);
           console.log('[AddEvent] Image uploaded:', imageUrl);
         } catch (uploadError: any) {
           console.error('[AddEvent] Image upload failed:', uploadError);
@@ -317,15 +423,16 @@ export default function AddEventScreen({ navigation }: Props) {
       console.log('[AddEvent] Creating event with data:', JSON.stringify(eventData, null, 2));
       await eventApi.create(eventData);
 
-      // Start background tracking if using phone device with real-time tracking
+      // Start foreground-only tracking if using phone device with real-time tracking
+      // This only requests "while using the app" permission, not background permission
       if (usePhoneDevice && realTimeTracking) {
-        console.log('[AddEvent] Starting background location tracking for phone event...');
-        const trackingStarted = await startBackgroundTracking();
+        console.log('[AddEvent] Starting foreground location tracking for phone event...');
+        const trackingStarted = await startForegroundTracking();
         if (trackingStarted) {
-          console.log('[AddEvent] Background tracking started successfully');
-          showSuccess('Evento publicado - tracking activo');
+          console.log('[AddEvent] Foreground tracking started successfully');
+          showSuccess('Evento publicado - ubicacion compartida');
         } else {
-          console.warn('[AddEvent] Background tracking could not start');
+          console.warn('[AddEvent] Foreground tracking could not start');
           showSuccess('Evento publicado');
         }
       } else {
@@ -347,6 +454,22 @@ export default function AddEventScreen({ navigation }: Props) {
 
   const selectedTypeConfig = EVENT_TYPES.find(t => t.value === eventType);
 
+  // Helper to format last position time
+  const formatLastPositionTime = (timestamp: string | null) => {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Hace un momento';
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    if (diffHours < 24) return `Hace ${diffHours}h`;
+    return `Hace ${diffDays}d`;
+  };
+
   const renderDetailsStep = () => (
     <ScrollView
       style={styles.stepContainer}
@@ -356,7 +479,7 @@ export default function AddEventScreen({ navigation }: Props) {
     >
       {/* Event Type Selector */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Tipo de evento</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Tipo de evento</Text>
         <View style={styles.typeSelector}>
           {EVENT_TYPES.map(type => {
             const isSelected = eventType === type.value;
@@ -365,7 +488,8 @@ export default function AddEventScreen({ navigation }: Props) {
                 key={type.value}
                 style={[
                   styles.typeChip,
-                  isSelected && { backgroundColor: type.color },
+                  { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' },
+                  isSelected && { backgroundColor: type.color, borderColor: type.color },
                 ]}
                 onPress={() => setEventType(type.value)}
                 activeOpacity={0.7}
@@ -391,25 +515,29 @@ export default function AddEventScreen({ navigation }: Props) {
 
         {/* Urgent Toggle */}
         <TouchableOpacity
-          style={[styles.urgentToggle, isUrgent && styles.urgentToggleActive]}
+          style={[
+            styles.urgentToggle,
+            { backgroundColor: isDark ? '#2C2C2E' : '#F8F8F8', borderColor: isDark ? '#3A3A3C' : '#E5E5EA' },
+            isUrgent && { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.15)' : '#FFEBEB', borderColor: '#FF3B30' }
+          ]}
           onPress={() => setIsUrgent(!isUrgent)}
         >
           <View style={styles.urgentToggleLeft}>
             <Ionicons
               name={isUrgent ? "alert-circle" : "alert-circle-outline"}
               size={20}
-              color={isUrgent ? '#FF3B30' : '#666'}
+              color={isUrgent ? '#FF3B30' : theme.textSecondary}
             />
             <View>
-              <Text style={[styles.urgentToggleText, isUrgent && styles.urgentToggleTextActive]}>
+              <Text style={[styles.urgentToggleText, { color: theme.text }, isUrgent && styles.urgentToggleTextActive]}>
                 Marcar como urgente
               </Text>
-              <Text style={styles.urgentToggleHint}>
+              <Text style={[styles.urgentToggleHint, { color: (isUrgent && isDark) ? 'rgba(255, 59, 48, 0.8)' : theme.textSecondary }]}>
                 {isUrgent ? 'Se mostrara con indicador pulsante' : 'Mayor visibilidad en el feed'}
               </Text>
             </View>
           </View>
-          <View style={[styles.toggleSwitch, isUrgent && styles.urgentToggleSwitchActive]}>
+          <View style={[styles.toggleSwitch, { backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA' }, isUrgent && styles.urgentToggleSwitchActive]}>
             <View style={[styles.toggleKnob, isUrgent && styles.toggleKnobActive]} />
           </View>
         </TouchableOpacity>
@@ -417,13 +545,13 @@ export default function AddEventScreen({ navigation }: Props) {
 
       {/* Device Selection - Modern Card Design */}
       <View style={styles.deviceSection}>
-        <Text style={styles.sectionLabel}>Seguimiento en vivo</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Seguimiento en vivo</Text>
 
         {/* Device List */}
-        <View style={styles.deviceList}>
+        <View style={[styles.deviceList, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
           {/* No tracking option */}
           <TouchableOpacity
-            style={styles.deviceRow}
+            style={[styles.deviceRow, { borderBottomColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}
             onPress={async () => {
               handleDeviceSelect('');
               setUsePhoneDevice(false);
@@ -446,12 +574,12 @@ export default function AddEventScreen({ navigation }: Props) {
             }}
             activeOpacity={0.7}
           >
-            <View style={[styles.deviceRowIcon, { backgroundColor: '#F0F0F0' }]}>
-              <Ionicons name="location-outline" size={22} color="#8E8E93" />
+            <View style={[styles.deviceRowIcon, { backgroundColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}>
+              <Ionicons name="location-outline" size={22} color={theme.textSecondary} />
             </View>
             <View style={styles.deviceRowContent}>
-              <Text style={styles.deviceRowTitle}>Solo ubicacion inicial</Text>
-              <Text style={styles.deviceRowSubtitle}>Elegir ubicacion en el mapa</Text>
+              <Text style={[styles.deviceRowTitle, { color: theme.text }]}>Solo ubicacion inicial</Text>
+              <Text style={[styles.deviceRowSubtitle, { color: theme.textSecondary }]}>Elegir ubicacion en el mapa</Text>
             </View>
             <View style={[styles.radioOuter, !selectedDevice && !usePhoneDevice && styles.radioOuterSelected]}>
               {!selectedDevice && !usePhoneDevice && <View style={styles.radioInner} />}
@@ -461,7 +589,7 @@ export default function AddEventScreen({ navigation }: Props) {
           {/* Phone Device */}
           {phoneDevice && (
             <TouchableOpacity
-              style={styles.deviceRow}
+              style={[styles.deviceRow, { borderBottomColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}
               onPress={() => {
                 handleDeviceSelect('');
                 setUsePhoneDevice(true);
@@ -469,12 +597,12 @@ export default function AddEventScreen({ navigation }: Props) {
               }}
               activeOpacity={0.7}
             >
-              <View style={[styles.deviceRowIcon, { backgroundColor: '#EDE7F6' }]}>
+              <View style={[styles.deviceRowIcon, { backgroundColor: isDark ? 'rgba(88, 86, 214, 0.2)' : '#EDE7F6' }]}>
                 <Ionicons name="phone-portrait" size={22} color="#5856D6" />
               </View>
               <View style={styles.deviceRowContent}>
-                <Text style={styles.deviceRowTitle}>Este iPhone</Text>
-                <Text style={styles.deviceRowSubtitle}>Compartir ubicacion en tiempo real</Text>
+                <Text style={[styles.deviceRowTitle, { color: theme.text }]}>Este iPhone</Text>
+                <Text style={[styles.deviceRowSubtitle, { color: theme.textSecondary }]}>Compartir ubicacion en tiempo real</Text>
               </View>
               <View style={[styles.radioOuter, usePhoneDevice && styles.radioOuterSelected]}>
                 {usePhoneDevice && <View style={styles.radioInner} />}
@@ -484,27 +612,58 @@ export default function AddEventScreen({ navigation }: Props) {
 
           {/* GPS Tracker Devices */}
           {devices.filter(d => d.type === 'GPS_TRACKER').map(device => (
-            <TouchableOpacity
-              key={device.id}
-              style={styles.deviceRow}
-              onPress={() => {
-                handleDeviceSelect(device.id);
-                setUsePhoneDevice(false);
-                setRealTimeTracking(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.deviceRowIcon, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="navigate" size={22} color="#007AFF" />
-              </View>
-              <View style={styles.deviceRowContent}>
-                <Text style={styles.deviceRowTitle}>{device.name || `JX10-${device.imei?.slice(-4)}`}</Text>
-                <Text style={styles.deviceRowSubtitle}>Rastreador GPS</Text>
-              </View>
-              <View style={[styles.radioOuter, selectedDevice === device.id && styles.radioOuterSelected]}>
-                {selectedDevice === device.id && <View style={styles.radioInner} />}
-              </View>
-            </TouchableOpacity>
+            <React.Fragment key={device.id}>
+              <TouchableOpacity
+                style={[styles.deviceRow, { borderBottomColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}
+                onPress={() => {
+                  handleDeviceSelect(device.id);
+                  setUsePhoneDevice(false);
+                  setRealTimeTracking(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.deviceRowIcon, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E3F2FD' }]}>
+                  <Ionicons name="navigate" size={22} color="#007AFF" />
+                </View>
+                <View style={styles.deviceRowContent}>
+                  <Text style={[styles.deviceRowTitle, { color: theme.text }]}>{device.name || `JX10-${device.imei?.slice(-4)}`}</Text>
+                  <Text style={[styles.deviceRowSubtitle, { color: theme.textSecondary }]}>Rastreador GPS</Text>
+                </View>
+                <View style={[styles.radioOuter, selectedDevice === device.id && styles.radioOuterSelected]}>
+                  {selectedDevice === device.id && <View style={styles.radioInner} />}
+                </View>
+              </TouchableOpacity>
+
+              {/* Device Location Status - only show when this device is selected */}
+              {selectedDevice === device.id && (
+                <View style={[styles.deviceLocationStatus, { backgroundColor: isDark ? '#2C2C2E' : '#FAFAFA', borderBottomColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}>
+                  {loadingDeviceLocation ? (
+                    <View style={styles.deviceLocationLoading}>
+                      <ActivityIndicator size="small" color="#007AFF" />
+                      <Text style={[styles.deviceLocationLoadingText, { color: theme.textSecondary }]}>Obteniendo ubicacion del dispositivo...</Text>
+                    </View>
+                  ) : deviceLocationError ? (
+                    <View style={styles.deviceLocationError}>
+                      <Ionicons name="warning" size={16} color="#FF3B30" />
+                      <Text style={styles.deviceLocationErrorText}>{deviceLocationError}</Text>
+                      <TouchableOpacity
+                        style={styles.retryLocationBtn}
+                        onPress={() => loadDeviceLocation(device.id)}
+                      >
+                        <Text style={styles.retryLocationBtnText}>Reintentar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : deviceLocation ? (
+                    <View style={styles.deviceLocationSuccess}>
+                      <Ionicons name="checkmark-circle" size={16} color="#34C759" />
+                      <Text style={styles.deviceLocationSuccessText}>
+                        Ubicacion obtenida {lastPositionTime ? formatLastPositionTime(lastPositionTime) : ''}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              )}
+            </React.Fragment>
           ))}
         </View>
 
@@ -523,24 +682,24 @@ export default function AddEventScreen({ navigation }: Props) {
 
       {/* Description */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Descripcion</Text>
-        <View style={styles.inputContainer}>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Descripcion</Text>
+        <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
           <TextInput
-            style={styles.descriptionInput}
+            style={[styles.descriptionInput, { color: theme.text }]}
             placeholder="Que esta pasando? Describe la situacion..."
-            placeholderTextColor="#999"
+            placeholderTextColor={isDark ? '#8E8E93' : '#999'}
             value={description}
             onChangeText={setDescription}
-            multiline
+            multiline={true}
             maxLength={500}
           />
-          <Text style={styles.charCounter}>{description.length}/500</Text>
+          <Text style={[styles.charCounter, { color: theme.textSecondary }]}>{`${description.length}/500`}</Text>
         </View>
       </View>
 
       {/* Photo */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Foto (opcional)</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Foto (opcional)</Text>
         {imageUri ? (
           <View style={styles.imagePreview}>
             <Image source={{ uri: imageUri }} style={styles.previewImage} />
@@ -553,13 +712,13 @@ export default function AddEventScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={styles.photoButtons}>
-            <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
-              <Ionicons name="camera-outline" size={24} color="#007AFF" />
-              <Text style={styles.photoBtnText}>Camara</Text>
+            <TouchableOpacity style={[styles.photoBtn, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]} onPress={takePhoto}>
+              <Ionicons name="camera-outline" size={24} color={theme.text} />
+              <Text style={[styles.photoBtnText, { color: theme.text }]}>Camara</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
-              <Ionicons name="images-outline" size={24} color="#007AFF" />
-              <Text style={styles.photoBtnText}>Galeria</Text>
+            <TouchableOpacity style={[styles.photoBtn, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]} onPress={pickImage}>
+              <Ionicons name="images-outline" size={24} color={theme.text} />
+              <Text style={[styles.photoBtnText, { color: theme.text }]}>Galeria</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -568,25 +727,25 @@ export default function AddEventScreen({ navigation }: Props) {
       {/* Group (if available) */}
       {adminGroups.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Publicar en</Text>
+          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Publicar en</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
             <TouchableOpacity
-              style={[styles.optionChip, !selectedGroup && styles.optionChipSelected]}
+              style={[styles.optionChip, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }, !selectedGroup && styles.optionChipSelected]}
               onPress={() => { setSelectedGroup(null); setIsPublic(true); }}
             >
-              <Ionicons name="globe-outline" size={16} color={!selectedGroup ? '#fff' : '#666'} />
-              <Text style={[styles.optionChipText, !selectedGroup && styles.optionChipTextSelected]}>
+              <Ionicons name="globe-outline" size={16} color={!selectedGroup ? '#fff' : theme.textSecondary} />
+              <Text style={[styles.optionChipText, { color: theme.textSecondary }, !selectedGroup && styles.optionChipTextSelected]}>
                 Publico
               </Text>
             </TouchableOpacity>
             {adminGroups.map(group => (
               <TouchableOpacity
                 key={group.id}
-                style={[styles.optionChip, selectedGroup === group.id && styles.optionChipSelected]}
+                style={[styles.optionChip, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }, selectedGroup === group.id && styles.optionChipSelected]}
                 onPress={() => { setSelectedGroup(group.id); setIsPublic(false); }}
               >
-                <Ionicons name="people-outline" size={16} color={selectedGroup === group.id ? '#fff' : '#666'} />
-                <Text style={[styles.optionChipText, selectedGroup === group.id && styles.optionChipTextSelected]}>
+                <Ionicons name="people-outline" size={16} color={selectedGroup === group.id ? '#fff' : theme.textSecondary} />
+                <Text style={[styles.optionChipText, { color: theme.textSecondary }, selectedGroup === group.id && styles.optionChipTextSelected]}>
                   {group.name}
                 </Text>
               </TouchableOpacity>
@@ -602,29 +761,25 @@ export default function AddEventScreen({ navigation }: Props) {
 
   const renderLocationStep = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.locationStepContent}>
-        {/* Back button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => animateToStep(0)}
-        >
-          <Ionicons name="arrow-back" size={24} color="#333" />
-          <Text style={styles.backButtonText}>Volver</Text>
-        </TouchableOpacity>
-
-        {/* Location Card */}
-        <View style={styles.locationCard}>
-          <Text style={styles.locationCardTitle}>Ubicacion del evento</Text>
+      <ScrollView
+        style={styles.locationStepScrollView}
+        contentContainerStyle={styles.locationStepScrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Location Card - Full Width */}
+        <View style={[styles.locationCardFullWidth, { backgroundColor: theme.surface, borderBottomColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+          <Text style={[styles.locationCardTitleFullWidth, { color: theme.text }]}>Ubicacion del evento</Text>
 
           {loadingLocation ? (
             <View style={styles.locationStatus}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.locationStatusText}>Obteniendo ubicacion...</Text>
+              <ActivityIndicator size="large" color={theme.primary.main} />
+              <Text style={[styles.locationStatusText, { color: theme.textSecondary }]}>Obteniendo ubicacion...</Text>
             </View>
           ) : location ? (
-            <View style={styles.locationWithMap}>
-              {/* Mini Map Preview */}
-              <View style={styles.miniMapContainer}>
+            <View style={styles.locationWithMapFullWidth}>
+              {/* Mini Map Preview - Full Width */}
+              <View style={styles.miniMapContainerFullWidth}>
                 <MapView
                   style={styles.miniMap}
                   region={{
@@ -666,14 +821,14 @@ export default function AddEventScreen({ navigation }: Props) {
               {/* Only show change location button if NOT using real-time tracking */}
               {!realTimeTracking ? (
                 <TouchableOpacity
-                  style={styles.changeLocationBtn}
+                  style={styles.changeLocationBtnFullWidth}
                   onPress={() => setShowMapPicker(true)}
                 >
                   <Ionicons name="create-outline" size={18} color="#007AFF" />
                   <Text style={styles.changeLocationText}>Cambiar ubicacion</Text>
                 </TouchableOpacity>
               ) : (
-                <View style={styles.trackingInfoBox}>
+                <View style={styles.trackingInfoBoxFullWidth}>
                   <Ionicons name="information-circle-outline" size={16} color="#8E8E93" />
                   <Text style={styles.trackingInfoText}>
                     La ubicacion se obtiene del dispositivo GPS en tiempo real
@@ -684,38 +839,72 @@ export default function AddEventScreen({ navigation }: Props) {
           ) : (
             <View style={styles.locationStatus}>
               <Ionicons name="location-outline" size={48} color="#FF3B30" />
-              <Text style={styles.locationErrorText}>No se pudo obtener</Text>
+              <Text style={[styles.locationErrorText, { color: theme.textSecondary }]}>No se pudo obtener</Text>
               <TouchableOpacity style={styles.retryBtn} onPress={getCurrentLocation}>
                 <Text style={styles.retryBtnText}>Reintentar</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowMapPicker(true)}>
-                <Text style={styles.manualLocationText}>Seleccionar en mapa</Text>
+                <Text style={[styles.manualLocationText, { color: theme.primary.main }]}>Seleccionar en mapa</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* Summary */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Resumen</Text>
-          <View style={styles.summaryRow}>
-            <View style={[styles.summaryTypeBadge, { backgroundColor: selectedTypeConfig?.color || '#007AFF' }]}>
-              <Ionicons name={selectedTypeConfig?.icon as any || 'megaphone-outline'} size={16} color="#fff" />
-              <Text style={styles.summaryTypeText}>{selectedTypeConfig?.label || 'General'}</Text>
+        {/* Event Preview - Instagram/Feed Style (matches EventDetailScreen) - Full Width */}
+        <View style={[styles.previewCardFullWidth, { backgroundColor: theme.surface, borderBottomColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+          <Text style={[styles.previewTitleFullWidth, { color: theme.textSecondary }]}>Vista previa</Text>
+
+          {/* User Header - Like EventDetailScreen */}
+          <View style={styles.previewUserHeaderFullWidth}>
+            <View style={[styles.previewAvatar, { backgroundColor: selectedTypeConfig?.color || '#007AFF' }]}>
+              <Text style={styles.previewAvatarText}>T</Text>
+            </View>
+            <View style={styles.previewUserTextContainer}>
+              <Text style={[styles.previewUserName, { color: theme.text }]}>Tu</Text>
+              <View style={styles.previewUserSubtitle}>
+                {isUrgent && <UrgentPulsingDot size="small" />}
+                <View style={[styles.previewTypeBadge, { backgroundColor: selectedTypeConfig?.color || '#007AFF' }]}>
+                  <Ionicons name={selectedTypeConfig?.icon as any || 'megaphone-outline'} size={10} color="#fff" />
+                  <Text style={styles.previewTypeBadgeText}>{selectedTypeConfig?.label || 'General'}</Text>
+                </View>
+              </View>
             </View>
           </View>
-          <Text style={styles.summaryDescription} numberOfLines={2}>{description}</Text>
+
+          {/* Image Preview - Full width like EventDetailScreen */}
           {imageUri && (
-            <View style={styles.summaryImageBadge}>
-              <Ionicons name="image" size={14} color="#34C759" />
-              <Text style={styles.summaryImageText}>Imagen adjunta</Text>
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.previewEventImageFullWidth}
+            />
+          )}
+
+
+          {/* Description - Instagram style */}
+          <View style={styles.previewDescriptionContainerFullWidth}>
+            <Text style={[styles.previewDescription, { color: theme.text }]}>
+              <Text style={styles.previewDescriptionUserName}>Tu </Text>
+              {description}
+            </Text>
+          </View>
+
+          {/* Device info if using tracking */}
+          {(selectedDevice || usePhoneDevice) && realTimeTracking && (
+            <View style={styles.previewDeviceInfoFullWidth}>
+              <Ionicons name={usePhoneDevice ? "phone-portrait" : "navigate"} size={14} color={theme.textSecondary} />
+              <Text style={[styles.previewDeviceText, { color: theme.textSecondary }]}>
+                {usePhoneDevice ? 'Compartiendo desde este telefono' : 'Rastreando dispositivo GPS'}
+              </Text>
             </View>
           )}
         </View>
-      </View>
+
+        {/* Spacer for bottom button */}
+        <View style={{ height: 100 }} />
+      </ScrollView>
 
       {/* Publish Button */}
-      <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12 }]}>
+      <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12, backgroundColor: theme.surface, borderTopColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}>
         <TouchableOpacity
           style={[styles.publishBtn, (!location || loading) && styles.publishBtnDisabled]}
           onPress={handleSubmit}
@@ -737,20 +926,23 @@ export default function AddEventScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
     >
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <View style={styles.headerSide}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <Ionicons name="close" size={24} color="#333" />
+          <TouchableOpacity
+            onPress={() => currentStep === 1 ? animateToStep(0) : navigation.goBack()}
+            style={styles.headerButton}
+          >
+            <Ionicons name={currentStep === 1 ? "arrow-back" : "close"} size={24} color={theme.text} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.headerTitle}>Nuevo Evento</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Nuevo Evento</Text>
         <View style={styles.headerSide}>
           <View style={styles.stepIndicator}>
-            <View style={[styles.stepDot, currentStep >= 0 && styles.stepDotActive]} />
-            <View style={[styles.stepDot, currentStep >= 1 && styles.stepDotActive]} />
+            <View style={[styles.stepDot, { backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA' }, currentStep >= 0 && styles.stepDotActive]} />
+            <View style={[styles.stepDot, { backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA' }, currentStep >= 1 && styles.stepDotActive]} />
           </View>
         </View>
       </View>
@@ -768,14 +960,31 @@ export default function AddEventScreen({ navigation }: Props) {
 
       {/* Continue Button (only on step 0) */}
       {currentStep === 0 && (
-        <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={[styles.bottomAction, { paddingBottom: insets.bottom + 12, backgroundColor: theme.surface, borderTopColor: isDark ? '#3A3A3C' : '#F0F0F0' }]}>
           <TouchableOpacity
-            style={[styles.continueBtn, !description.trim() && styles.continueBtnDisabled]}
+            style={[
+              styles.continueBtn,
+              (!description.trim() || (!!selectedDevice && (!!deviceLocationError || loadingDeviceLocation))) && styles.continueBtnDisabled,
+            ]}
             onPress={handleNextFromDetails}
-            disabled={!description.trim()}
+            disabled={!description.trim() || (!!selectedDevice && (!!deviceLocationError || loadingDeviceLocation))}
           >
-            <Text style={styles.continueBtnText}>Continuar</Text>
-            <Ionicons name="arrow-forward" size={20} color="#fff" />
+            {!!selectedDevice && loadingDeviceLocation ? (
+              <>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={styles.continueBtnText}>Obteniendo ubicacion...</Text>
+              </>
+            ) : !!selectedDevice && !!deviceLocationError ? (
+              <>
+                <Ionicons name="warning" size={20} color="#fff" />
+                <Text style={styles.continueBtnText}>Sin ubicacion del dispositivo</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.continueBtnText}>Continuar</Text>
+                <Ionicons name="arrow-forward" size={20} color="#fff" />
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -1169,52 +1378,122 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#007AFF',
   },
-  summaryCard: {
+  // Preview Card - matches EventDetailScreen style
+  previewCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E5E5EA',
   },
-  summaryTitle: {
+  previewTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#8E8E93',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  summaryRow: {
-    marginBottom: 8,
-  },
-  summaryTypeBadge: {
+  previewUserHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  summaryTypeText: {
-    fontSize: 14,
-    fontWeight: '600',
+  previewAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewAvatarText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
-  summaryDescription: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-    marginBottom: 8,
+  previewUserTextContainer: {
+    marginLeft: 10,
+    flex: 1,
   },
-  summaryImageBadge: {
+  previewUserName: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  previewUserSubtitle: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  summaryImageText: {
+  previewTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  previewTypeBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  previewEventImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#f0f0f0',
+  },
+  previewInteractionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  previewInteractionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  previewInteractionButton: {
+    padding: 4,
+  },
+  previewTimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  previewTimeBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  previewDescriptionContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  previewDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  previewDescriptionUserName: {
+    fontWeight: '600',
+  },
+  previewDeviceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+  },
+  previewDeviceText: {
     fontSize: 13,
-    color: '#34C759',
   },
   bottomAction: {
     position: 'absolute',
@@ -1366,5 +1645,151 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#34C759',
     lineHeight: 18,
+  },
+  // Device Location Status Styles
+  deviceLocationStatus: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  deviceLocationLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  deviceLocationLoadingText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  deviceLocationError: {
+    backgroundColor: '#FFF5F5',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  deviceLocationErrorText: {
+    fontSize: 13,
+    color: '#FF3B30',
+    lineHeight: 18,
+    marginLeft: 24,
+    marginTop: -20,
+  },
+  retryLocationBtn: {
+    alignSelf: 'flex-start',
+    marginLeft: 24,
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#FF3B30',
+    borderRadius: 14,
+  },
+  retryLocationBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  deviceLocationSuccess: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deviceLocationSuccessText: {
+    fontSize: 13,
+    color: '#34C759',
+  },
+  // Full Width Styles for Step 2 (Location/Preview)
+  locationStepScrollView: {
+    flex: 1,
+  },
+  locationStepScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 120,
+  },
+  locationCardFullWidth: {
+    backgroundColor: '#fff',
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  locationCardTitleFullWidth: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  locationWithMapFullWidth: {
+    alignItems: 'center',
+  },
+  miniMapContainerFullWidth: {
+    width: '100%',
+    height: 200,
+    overflow: 'hidden',
+    marginBottom: 12,
+    position: 'relative',
+  },
+  changeLocationBtnFullWidth: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  trackingInfoBoxFullWidth: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  previewCardFullWidth: {
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  previewTitleFullWidth: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  previewUserHeaderFullWidth: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  previewEventImageFullWidth: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#f0f0f0',
+  },
+  previewInteractionBarFullWidth: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  previewDescriptionContainerFullWidth: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  previewDeviceInfoFullWidth: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
 });

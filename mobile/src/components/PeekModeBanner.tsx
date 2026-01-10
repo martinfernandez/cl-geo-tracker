@@ -53,7 +53,7 @@ export function PeekModeBanner({ isPeeking, onPress }: PeekModeBannerProps) {
         <Ionicons
           name={isPeeking ? 'eye' : 'eye-off-outline'}
           size={16}
-          color={isPeeking ? colors.success.dark : '#8B4513'}
+          color={isPeeking ? colors.success.dark : '#A78BFA'}
         />
         <Text
           style={[
@@ -66,7 +66,7 @@ export function PeekModeBanner({ isPeeking, onPress }: PeekModeBannerProps) {
         <Ionicons
           name="chevron-forward"
           size={14}
-          color={isPeeking ? colors.success.dark : '#8B4513'}
+          color={isPeeking ? colors.success.dark : '#A78BFA'}
           style={styles.chevron}
         />
       </Animated.View>
@@ -91,9 +91,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(52, 199, 89, 0.3)',
   },
   bannerInactive: {
-    backgroundColor: 'rgba(139, 69, 19, 0.08)',
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(139, 69, 19, 0.15)',
+    borderColor: 'rgba(139, 92, 246, 0.4)',
   },
   content: {
     flexDirection: 'row',
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     color: colors.success.dark,
   },
   textInactive: {
-    color: '#8B4513',
+    color: '#A78BFA',
   },
   chevron: {
     marginLeft: 2,

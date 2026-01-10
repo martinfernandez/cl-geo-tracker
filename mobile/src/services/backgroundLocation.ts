@@ -210,6 +210,47 @@ export async function flushPendingLocations(): Promise<void> {
 }
 
 /**
+ * Start foreground-only location tracking (no background permissions required)
+ * Uses only "while using the app" permission - location updates stop when app is backgrounded
+ */
+export async function startForegroundTracking(): Promise<boolean> {
+  try {
+    // Only request foreground permissions (while using the app)
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      console.log('[BackgroundLocation] Foreground permission denied');
+      return false;
+    }
+
+    // Get and submit current location immediately
+    try {
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const position = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        altitude: currentLocation.coords.altitude,
+        speed: currentLocation.coords.speed,
+        heading: currentLocation.coords.heading,
+        accuracy: currentLocation.coords.accuracy,
+        timestamp: new Date(currentLocation.timestamp).toISOString(),
+      };
+      await phoneLocationApi.submitPosition(position);
+      console.log('[BackgroundLocation] Submitted initial foreground position');
+    } catch (initialErr) {
+      console.warn('[BackgroundLocation] Could not submit initial foreground position:', initialErr);
+    }
+
+    console.log('[BackgroundLocation] Foreground tracking ready (no background updates)');
+    return true;
+  } catch (error) {
+    console.error('[BackgroundLocation] Error starting foreground tracking:', error);
+    return false;
+  }
+}
+
+/**
  * Get and submit location on-demand (called when server requests it)
  * This is throttled to prevent battery drain from spam requests
  */

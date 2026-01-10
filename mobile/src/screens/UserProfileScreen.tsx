@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useTheme } from '../contexts/ThemeContext';
+import UserAvatar from '../components/UserAvatar';
 
 type RootStackParamList = {
   UserProfile: { userId: string };
@@ -24,6 +26,7 @@ interface UserProfile {
   id: string;
   name: string;
   email?: string;
+  imageUrl?: string | null;
   showName: boolean;
   showEmail: boolean;
   showPublicEvents: boolean;
@@ -67,6 +70,7 @@ const EVENT_LABELS = {
 export default function UserProfileScreen() {
   const route = useRoute<UserProfileRouteProp>();
   const navigation = useNavigation();
+  const { theme, isDark } = useTheme();
   const userId = route.params?.userId;
 
   const [loading, setLoading] = useState(true);
@@ -119,7 +123,7 @@ export default function UserProfileScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.eventCard}
+        style={[styles.eventCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}
         onPress={() => navigation.navigate('EventDetail' as never, { eventId: item.id } as never)}
       >
         <View style={[styles.eventIconContainer, { backgroundColor: eventColor }]}>
@@ -128,7 +132,7 @@ export default function UserProfileScreen() {
 
         <View style={styles.eventContent}>
           <View style={styles.eventHeader}>
-            <Text style={styles.eventType}>{eventLabel}</Text>
+            <Text style={[styles.eventType, { color: theme.text }]}>{eventLabel}</Text>
             {item.isUrgent && (
               <View style={styles.urgentBadge}>
                 <Text style={styles.urgentText}>Urgente</Text>
@@ -136,21 +140,24 @@ export default function UserProfileScreen() {
             )}
           </View>
 
-          <Text style={styles.eventDescription} numberOfLines={2}>
+          <Text style={[styles.eventDescription, { color: theme.text }]} numberOfLines={2}>
             {item.description}
           </Text>
 
           <View style={styles.eventFooter}>
-            <Text style={styles.eventDate}>
+            <Text style={[styles.eventDate, { color: theme.textSecondary }]}>
               {format(new Date(item.createdAt), "d MMM yyyy 'a las' HH:mm", { locale: es })}
             </Text>
             <View style={[
               styles.statusBadge,
-              item.status === 'CLOSED' && styles.statusBadgeClosed
+              { backgroundColor: item.status === 'CLOSED'
+                  ? (isDark ? 'rgba(76, 175, 80, 0.2)' : '#E8F5E9')
+                  : (isDark ? 'rgba(33, 150, 243, 0.2)' : '#E3F2FD')
+              }
             ]}>
               <Text style={[
                 styles.statusText,
-                item.status === 'CLOSED' && styles.statusTextClosed
+                { color: item.status === 'CLOSED' ? '#4CAF50' : '#2196F3' }
               ]}>
                 {item.status === 'IN_PROGRESS' ? 'En progreso' : 'Cerrado'}
               </Text>
@@ -163,19 +170,19 @@ export default function UserProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="#262626" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Perfil</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Perfil</Text>
           <View style={styles.backButton} />
         </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+        <View style={[styles.loadingContainer, { backgroundColor: theme.bgSecondary }]}>
+          <ActivityIndicator size="large" color={theme.primary.main} />
         </View>
       </View>
     );
@@ -183,22 +190,22 @@ export default function UserProfileScreen() {
 
   if (error || !profile) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="#262626" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Perfil</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Perfil</Text>
           <View style={styles.backButton} />
         </View>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color="#8E8E93" />
-          <Text style={styles.errorTitle}>Usuario no encontrado</Text>
-          <Text style={styles.errorMessage}>{error || 'El perfil no existe'}</Text>
-          <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
+        <View style={[styles.errorContainer, { backgroundColor: theme.bgSecondary }]}>
+          <Ionicons name="alert-circle-outline" size={64} color={theme.textTertiary} />
+          <Text style={[styles.errorTitle, { color: theme.text }]}>Usuario no encontrado</Text>
+          <Text style={[styles.errorMessage, { color: theme.textSecondary }]}>{error || 'El perfil no existe'}</Text>
+          <TouchableOpacity style={[styles.errorButton, { backgroundColor: theme.primary.main }]} onPress={() => navigation.goBack()}>
             <Text style={styles.errorButtonText}>Volver</Text>
           </TouchableOpacity>
         </View>
@@ -210,65 +217,65 @@ export default function UserProfileScreen() {
   const memberSince = format(new Date(profile.createdAt), 'MMMM yyyy', { locale: es });
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{displayName}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{displayName}</Text>
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.scrollView, { backgroundColor: theme.bgSecondary }]} showsVerticalScrollIndicator={false}>
         {/* Profile Info Section */}
-        <View style={styles.profileSection}>
+        <View style={[styles.profileSection, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           {/* Avatar */}
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {displayName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            <UserAvatar
+              imageUrl={profile.imageUrl}
+              name={displayName}
+              size={100}
+            />
           </View>
 
           {/* User Info */}
-          <Text style={styles.userName}>{displayName}</Text>
+          <Text style={[styles.userName, { color: theme.text }]}>{displayName}</Text>
 
           {profile.showEmail && profile.email && (
-            <Text style={styles.userEmail}>{profile.email}</Text>
+            <Text style={[styles.userEmail, { color: theme.textSecondary }]}>{profile.email}</Text>
           )}
 
-          <Text style={styles.memberSince}>
+          <Text style={[styles.memberSince, { color: theme.textSecondary }]}>
             Miembro desde {memberSince}
           </Text>
         </View>
 
         {/* Events Section */}
         <View style={styles.eventsSection}>
-          <Text style={styles.sectionTitle}>Eventos Públicos</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Eventos Públicos</Text>
 
           {!profile.showPublicEvents ? (
             <View style={styles.emptyState}>
-              <Ionicons name="lock-closed" size={48} color="#8E8E93" />
-              <Text style={styles.emptyStateTitle}>Eventos privados</Text>
-              <Text style={styles.emptyStateMessage}>
+              <Ionicons name="lock-closed" size={48} color={theme.textTertiary} />
+              <Text style={[styles.emptyStateTitle, { color: theme.text }]}>Eventos privados</Text>
+              <Text style={[styles.emptyStateMessage, { color: theme.textSecondary }]}>
                 Este usuario ha ocultado sus eventos públicos
               </Text>
             </View>
           ) : loadingEvents ? (
             <View style={styles.loadingEventsContainer}>
-              <ActivityIndicator size="small" color="#007AFF" />
-              <Text style={styles.loadingText}>Cargando eventos...</Text>
+              <ActivityIndicator size="small" color={theme.primary.main} />
+              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando eventos...</Text>
             </View>
           ) : events.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="calendar-outline" size={48} color="#8E8E93" />
-              <Text style={styles.emptyStateTitle}>Sin eventos públicos</Text>
-              <Text style={styles.emptyStateMessage}>
+              <Ionicons name="calendar-outline" size={48} color={theme.textTertiary} />
+              <Text style={[styles.emptyStateTitle, { color: theme.text }]}>Sin eventos públicos</Text>
+              <Text style={[styles.emptyStateMessage, { color: theme.textSecondary }]}>
                 Este usuario no tiene eventos públicos
               </Text>
             </View>

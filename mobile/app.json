@@ -31,6 +31,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f5f5f5"
       },
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#FF3B30"
+      },
       "intentFilters": [
         {
           "action": "VIEW",
@@ -90,6 +94,14 @@
         {
           "photosPermission": "Allow GPS Tracker to access your photos.",
           "cameraPermission": "Allow GPS Tracker to use your camera."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#10B981",
+          "sounds": []
         }
       ]
     ],

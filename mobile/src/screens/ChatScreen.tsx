@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,8 @@ import ChatInput from '../components/chat/ChatInput';
 import TypingIndicator from '../components/chat/TypingIndicator';
 import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
 import { wsService } from '../services/websocket';
+import { useTheme } from '../contexts/ThemeContext';
+import UserAvatar from '../components/UserAvatar';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -63,6 +66,7 @@ interface Conversation {
   group?: {
     id: string;
     name: string;
+    imageUrl?: string;
   };
   participants: Array<{
     userId: string;
@@ -70,6 +74,7 @@ interface Conversation {
       id: string;
       name: string;
       email: string;
+      imageUrl?: string;
     };
   }>;
   messages: Message[];
@@ -78,6 +83,7 @@ interface Conversation {
 export default function ChatScreen() {
   const route = useRoute<ChatRouteProp>();
   const navigation = useNavigation();
+  const { theme, isDark } = useTheme();
   const { conversationId, eventId, otherUserId, isGroupChat, groupId, groupName } = route.params;
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -85,8 +91,11 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUserName, setOtherUserName] = useState('');
+  const [otherUserImage, setOtherUserImage] = useState<string | null>(null);
+  const [groupImage, setGroupImage] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [participantCount, setParticipantCount] = useState(0);
+  const [isSelfConversation, setIsSelfConversation] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -175,13 +184,29 @@ export default function ChatScreen() {
         // For group chats, use group name from params or conversation
         setOtherUserName(groupName || response.data.group?.name || 'Chat Grupal');
         setParticipantCount(response.data.participants?.length || 0);
+        if (response.data.group?.imageUrl) {
+          setGroupImage(response.data.group.imageUrl);
+        }
       } else {
-        // Get other user's name for 1-to-1 chat
-        const otherParticipant = response.data.participants.find(
-          (p: any) => p.userId !== currentUserId && p.userId === otherUserId
-        );
-        if (otherParticipant) {
-          setOtherUserName(otherParticipant.user.name);
+        // Check if this is a self-conversation (Saved Messages)
+        const isSelfConversation = response.data.participants.length === 2 &&
+          response.data.participants.every((p: any) => p.userId === currentUserId || p.userId === otherUserId) &&
+          currentUserId === otherUserId;
+
+        if (isSelfConversation) {
+          setIsSelfConversation(true);
+          setOtherUserName('Mensajes Guardados');
+        } else {
+          // Get other user's name for 1-to-1 chat
+          const otherParticipant = response.data.participants.find(
+            (p: any) => p.userId === otherUserId
+          );
+          if (otherParticipant) {
+            setOtherUserName(otherParticipant.user.name);
+            if (otherParticipant.user.imageUrl) {
+              setOtherUserImage(otherParticipant.user.imageUrl);
+            }
+          }
         }
       }
     } catch (error) {
@@ -241,19 +266,19 @@ export default function ChatScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="#262626" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chat</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Chat</Text>
           <View style={styles.backButton} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color={theme.primary.main} />
         </View>
       </View>
     );
@@ -261,7 +286,7 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
@@ -269,12 +294,12 @@ export default function ChatScreen() {
       <ObjectsPatternBackground height={SCREEN_HEIGHT} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
 
         {isGroupChat || conversation?.isGroupChat ? (
@@ -285,16 +310,31 @@ export default function ChatScreen() {
               navigation.navigate('GroupDetail' as never, { groupId: groupId || conversation?.groupId } as never)
             }
           >
-            <View style={[styles.avatar, styles.groupAvatar]}>
-              <Ionicons name="people" size={20} color="#fff" />
-            </View>
+            {groupImage ? (
+              <Image source={{ uri: groupImage }} style={styles.avatarImage} />
+            ) : (
+              <View style={[styles.avatar, styles.groupAvatar]}>
+                <Ionicons name="people" size={20} color="#fff" />
+              </View>
+            )}
             <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>{otherUserName}</Text>
-              <Text style={styles.headerSubtitle}>
+              <Text style={[styles.headerTitle, { color: theme.text }]}>{otherUserName}</Text>
+              <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
                 {participantCount} participantes
               </Text>
             </View>
           </TouchableOpacity>
+        ) : isSelfConversation ? (
+          // Self-conversation (Saved Messages) header
+          <View style={styles.headerCenter}>
+            <View style={[styles.avatar, styles.savedMessagesAvatar]}>
+              <Ionicons name="bookmark" size={20} color="#fff" />
+            </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={[styles.headerTitle, { color: theme.text }]}>{otherUserName}</Text>
+              <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Notas personales</Text>
+            </View>
+          </View>
         ) : (
           // 1-to-1 chat header
           <TouchableOpacity
@@ -303,15 +343,18 @@ export default function ChatScreen() {
               navigation.navigate('UserProfile' as never, { userId: otherUserId } as never)
             }
           >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {otherUserName.charAt(0).toUpperCase()}
-              </Text>
+            <View style={{ marginRight: 10 }}>
+              <UserAvatar
+                imageUrl={otherUserImage}
+                name={otherUserName}
+                size={36}
+                backgroundColor={theme.primary.main}
+              />
             </View>
             <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>{otherUserName}</Text>
+              <Text style={[styles.headerTitle, { color: theme.text }]}>{otherUserName}</Text>
               {conversation?.event && (
-                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
                   {conversation.event.description}
                 </Text>
               )}
@@ -334,8 +377,8 @@ export default function ChatScreen() {
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="chatbubbles-outline" size={64} color="#C7C7CC" />
-            <Text style={styles.emptyStateText}>
+            <Ionicons name="chatbubbles-outline" size={64} color={theme.textSecondary} />
+            <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
               No hay mensajes aún.{'\n'}Envía el primero!
             </Text>
           </View>
@@ -395,10 +438,19 @@ const styles = StyleSheet.create({
   groupAvatar: {
     backgroundColor: '#34C759',
   },
+  savedMessagesAvatar: {
+    backgroundColor: '#FF9500',
+  },
   avatarText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 10,
   },
   headerTextContainer: {
     flex: 1,

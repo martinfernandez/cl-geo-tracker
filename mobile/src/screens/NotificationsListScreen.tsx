@@ -11,8 +11,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { notificationApi, Notification } from '../services/api';
+import { useTheme } from '../contexts/ThemeContext';
+import { FadeInView } from '../components/FadeInView';
 
 export default function NotificationsListScreen({ navigation }: any) {
+  const { theme, isDark } = useTheme();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,29 +123,39 @@ export default function NotificationsListScreen({ navigation }: any) {
     return date.toLocaleDateString();
   };
 
-  const renderNotificationItem = ({ item }: { item: Notification }) => {
+  const renderNotificationItem = ({ item, index }: { item: Notification; index: number }) => {
     return (
+      <FadeInView delay={index * 50} duration={350}>
       <TouchableOpacity
-        style={[styles.notificationCard, !item.isRead && styles.notificationCardUnread]}
+        style={[
+          styles.notificationCard,
+          { backgroundColor: theme.surface },
+          !item.isRead && {
+            backgroundColor: isDark ? 'rgba(0, 122, 255, 0.15)' : '#F0F8FF',
+            borderLeftWidth: 3,
+            borderLeftColor: theme.primary.main,
+          },
+        ]}
         onPress={() => handleNotificationPress(item)}
       >
         <View style={styles.notificationIcon}>
           <Ionicons
             name={getNotificationIcon(item.type)}
             size={24}
-            color={item.isRead ? '#666' : '#007AFF'}
+            color={item.isRead ? theme.textSecondary : theme.primary.main}
           />
         </View>
         <View style={styles.notificationContent}>
           <Text
             style={[
               styles.notificationText,
-              !item.isRead && styles.notificationTextUnread,
+              { color: item.isRead ? theme.textSecondary : theme.text },
+              !item.isRead && { fontWeight: '500' },
             ]}
           >
             {item.content}
           </Text>
-          <Text style={styles.notificationTime}>{formatTimestamp(item.createdAt)}</Text>
+          <Text style={[styles.notificationTime, { color: theme.textTertiary }]}>{formatTimestamp(item.createdAt)}</Text>
         </View>
         <TouchableOpacity
           style={styles.deleteButton}
@@ -161,9 +174,10 @@ export default function NotificationsListScreen({ navigation }: any) {
             );
           }}
         >
-          <Ionicons name="trash-outline" size={20} color="#999" />
+          <Ionicons name="trash-outline" size={20} color={theme.textTertiary} />
         </TouchableOpacity>
       </TouchableOpacity>
+      </FadeInView>
     );
   };
 
@@ -171,25 +185,25 @@ export default function NotificationsListScreen({ navigation }: any) {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando notificaciones...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.bgSecondary }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando notificaciones...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Notificaciones</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Notificaciones</Text>
           {unreadCount > 0 && (
             <View style={styles.unreadBadge}>
               <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
@@ -201,7 +215,7 @@ export default function NotificationsListScreen({ navigation }: any) {
             onPress={handleMarkAllAsRead}
             style={styles.headerButton}
           >
-            <Ionicons name="checkmark-done" size={24} color="#007AFF" />
+            <Ionicons name="checkmark-done" size={24} color={theme.primary.main} />
           </TouchableOpacity>
         )}
         {unreadCount === 0 && <View style={styles.headerSpacer} />}
@@ -216,9 +230,9 @@ export default function NotificationsListScreen({ navigation }: any) {
         refreshing={refreshing}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyTitle}>No tienes notificaciones</Text>
-            <Text style={styles.emptyText}>
+            <Ionicons name="notifications-outline" size={64} color={theme.textTertiary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No tienes notificaciones</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
               Aquí aparecerán las notificaciones sobre tus eventos y áreas de interés
             </Text>
           </View>

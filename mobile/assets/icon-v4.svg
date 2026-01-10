@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Lighter purple gradient background -->
+  <rect width="1024" height="1024" fill="#1E1B4B"/>
+
+  <!-- Brighter purple glow top-left -->
+  <circle cx="200" cy="200" r="500" fill="#7C3AED" opacity="0.5"/>
+  <circle cx="200" cy="200" r="400" fill="#8B5CF6" opacity="0.4"/>
+  <circle cx="200" cy="200" r="300" fill="#A78BFA" opacity="0.3"/>
+
+  <!-- Brighter cyan glow bottom-right -->
+  <circle cx="824" cy="824" r="450" fill="#0891B2" opacity="0.4"/>
+  <circle cx="824" cy="824" r="350" fill="#06B6D4" opacity="0.35"/>
+  <circle cx="824" cy="824" r="250" fill="#22D3EE" opacity="0.25"/>
+
+  <!-- Center bright glow - MORE INTENSE -->
+  <circle cx="512" cy="512" r="380" fill="#A78BFA" opacity="0.25"/>
+  <circle cx="512" cy="512" r="320" fill="#C4B5FD" opacity="0.2"/>
+
+  <!-- Glass container outer glow -->
+  <circle cx="512" cy="512" r="400" fill="none" stroke="#FFFFFF" stroke-width="3" opacity="0.2"/>
+
+  <!-- Sclera (eye white) outer glow - BRIGHTER -->
+  <circle cx="512" cy="512" r="260" fill="#C4B5FD" opacity="0.4"/>
+  <circle cx="512" cy="512" r="250" fill="#DDD6FE" opacity="0.3"/>
+
+  <!-- Sclera (eye white) with subtle shadow - WHITER -->
+  <circle cx="512" cy="512" r="235" fill="#F1F5F9"/>
+  <circle cx="512" cy="512" r="228" fill="#FFFFFF"/>
+
+  <!-- Sclera highlight -->
+  <ellipse cx="460" cy="380" rx="100" ry="50" fill="#FFFFFF" opacity="0.8"/>
+
+  <!-- Iris outer ring -->
+  <circle cx="512" cy="512" r="175" fill="#0891B2"/>
+
+  <!-- Iris main - BRIGHTER -->
+  <circle cx="512" cy="512" r="168" fill="#06B6D4"/>
+
+  <!-- Iris bright inner - MORE VIBRANT -->
+  <circle cx="512" cy="512" r="152" fill="#22D3EE"/>
+
+  <!-- Iris lightest center - MUCH BRIGHTER -->
+  <circle cx="512" cy="512" r="130" fill="#67E8F9" opacity="0.8"/>
+  <circle cx="512" cy="512" r="110" fill="#A5F3FC" opacity="0.5"/>
+
+  <!-- Iris detail rings -->
+  <circle cx="512" cy="512" r="158" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.5"/>
+  <circle cx="512" cy="512" r="140" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.4"/>
+  <circle cx="512" cy="512" r="120" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.3"/>
+
+  <!-- Pupil with depth - SLIGHTLY SMALLER for more iris visibility -->
+  <circle cx="512" cy="512" r="70" fill="#0F172A"/>
+  <circle cx="512" cy="512" r="62" fill="#1E293B"/>
+  <circle cx="512" cy="512" r="52" fill="#0F172A"/>
+
+  <!-- Main highlight - larger and brighter -->
+  <ellipse cx="450" cy="440" rx="58" ry="50" fill="#FFFFFF"/>
+  <ellipse cx="450" cy="440" rx="45" ry="38" fill="#FFFFFF"/>
+
+  <!-- Secondary highlight -->
+  <circle cx="590" cy="580" r="24" fill="#FFFFFF" opacity="0.95"/>
+
+  <!-- Small sparkles - MORE VISIBLE -->
+  <circle cx="400" cy="475" r="14" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="615" cy="460" r="10" fill="#FFFFFF" opacity="0.85"/>
+  <circle cx="560" cy="610" r="8" fill="#FFFFFF" opacity="0.8"/>
+
+  <!-- Eye glass shine arc - BRIGHTER -->
+  <path d="M 340 400 Q 430 320 512 300 Q 594 320 684 400" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Decorative outer rings - more visible -->
+  <circle cx="512" cy="512" r="320" fill="none" stroke="#DDD6FE" stroke-width="4" opacity="0.5" stroke-dasharray="30 40"/>
+  <circle cx="512" cy="512" r="355" fill="none" stroke="#67E8F9" stroke-width="3" opacity="0.4" stroke-dasharray="20 50"/>
+</svg>

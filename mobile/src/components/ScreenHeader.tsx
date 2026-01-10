@@ -28,7 +28,7 @@ export function ScreenHeader({
 }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const handleBack = () => {
     if (onBack) {
@@ -38,34 +38,36 @@ export function ScreenHeader({
     }
   };
 
+  const buttonBgColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
+
   return (
     <View
       style={[
         styles.container,
         {
           paddingTop: insets.top + 8,
-          backgroundColor: theme.bg.primary,
-          borderBottomColor: theme.glass.border,
+          backgroundColor: theme.surface,
+          borderBottomColor: theme.border,
         },
       ]}
     >
       <View style={styles.content}>
         {showBack && (
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: theme.glass.bg }]}
+            style={[styles.backButton, { backgroundColor: buttonBgColor }]}
             onPress={handleBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="chevron-back" size={24} color={theme.text.primary} />
+            <Ionicons name="chevron-back" size={24} color={theme.text} />
           </TouchableOpacity>
         )}
 
         <View style={[styles.titleContainer, !showBack && styles.titleContainerNoBack]}>
-          <Text style={[styles.title, { color: theme.text.primary }]} numberOfLines={1}>
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
             {title}
           </Text>
           {subtitle && (
-            <Text style={[styles.subtitle, { color: theme.text.secondary }]} numberOfLines={1}>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={1}>
               {subtitle}
             </Text>
           )}
@@ -73,14 +75,14 @@ export function ScreenHeader({
 
         {rightAction && (
           <TouchableOpacity
-            style={[styles.rightButton, { backgroundColor: theme.glass.bg }]}
+            style={[styles.rightButton, { backgroundColor: buttonBgColor }]}
             onPress={rightAction.onPress}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons
               name={rightAction.icon}
               size={22}
-              color={rightAction.color || theme.text.primary}
+              color={rightAction.color || theme.text}
             />
           </TouchableOpacity>
         )}

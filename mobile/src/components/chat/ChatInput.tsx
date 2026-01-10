@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Props {
   onSend: (message: string) => void;
@@ -23,6 +24,7 @@ export default function ChatInput({
   onTypingStop,
   placeholder = 'Escribe un mensaje...',
 }: Props) {
+  const { theme } = useTheme();
   const [message, setMessage] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,14 +87,14 @@ export default function ChatInput({
   const bottomPadding = keyboardVisible ? 8 : Math.max(insets.bottom, 8);
 
   return (
-    <View style={[styles.container, { paddingBottom: bottomPadding }]}>
-      <View style={styles.inputContainer}>
+    <View style={[styles.container, { paddingBottom: bottomPadding, backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+      <View style={[styles.inputContainer, { backgroundColor: theme.bgSecondary }]}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { color: theme.text }]}
           value={message}
           onChangeText={handleTextChange}
           placeholder={placeholder}
-          placeholderTextColor="#8E8E93"
+          placeholderTextColor={theme.textTertiary}
           multiline
           maxLength={1000}
         />
@@ -108,7 +110,7 @@ export default function ChatInput({
           <Ionicons
             name="send"
             size={20}
-            color={message.trim().length > 0 ? '#007AFF' : '#8E8E93'}
+            color={message.trim().length > 0 ? theme.primary.main : theme.textDisabled}
           />
         </TouchableOpacity>
       </View>

@@ -88,11 +88,17 @@ export function setupNotificationListeners(navigation: any) {
   const responseListener = Notifications.addNotificationResponseReceivedListener(
     (response) => {
       console.log('Notification response:', response);
-      
+
       const data = response.notification.request.content.data;
-      
-      // Navigate to chat screen if notification contains conversation data
-      if (data.conversationId && data.eventId && data.senderId) {
+
+      // Navigate based on notification type
+      if (data.type === 'DEVICE_MOVEMENT_ALERT' && data.deviceId) {
+        // Navigate to device detail screen for movement alerts
+        navigation.navigate('DeviceDetail', {
+          deviceId: data.deviceId,
+        });
+      } else if (data.conversationId && data.eventId && data.senderId) {
+        // Navigate to chat screen for message notifications
         navigation.navigate('Chat', {
           conversationId: data.conversationId,
           eventId: data.eventId,

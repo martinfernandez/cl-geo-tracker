@@ -9,6 +9,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  imageUrl?: string | null;
 }
 
 export interface AuthResponse {

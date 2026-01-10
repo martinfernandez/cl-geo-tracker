@@ -16,6 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { areaApi, AreaOfInterest, api } from '../services/api';
 import Toast, { ToastType } from '../components/Toast';
+import { useTheme } from '../contexts/ThemeContext';
+import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 64;
@@ -25,6 +27,7 @@ interface NearbyArea extends AreaOfInterest {
 }
 
 export default function AreasSearchScreen({ navigation, route }: any) {
+  const { theme, isDark } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [areas, setAreas] = useState<AreaOfInterest[]>([]);
   const [nearbyAreas, setNearbyAreas] = useState<NearbyArea[]>([]);
@@ -303,12 +306,12 @@ export default function AreasSearchScreen({ navigation, route }: any) {
 
     return (
       <TouchableOpacity
-        style={styles.areaCard}
+        style={[styles.areaCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}
         onPress={() => navigation.navigate('AreaDetail', { areaId: item.id })}
       >
         <View style={styles.areaCardContent}>
           <View style={styles.areaCardHeader}>
-            <Text style={styles.areaCardName} numberOfLines={1}>{item.name}</Text>
+            <Text style={[styles.areaCardName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
             <View style={[styles.areaVisibilityBadge, { backgroundColor: visibilityInfo.color }]}>
               <Ionicons name={visibilityInfo.icon} size={10} color="#fff" />
               <Text style={styles.areaVisibilityText}>{visibilityInfo.label}</Text>
@@ -316,7 +319,7 @@ export default function AreasSearchScreen({ navigation, route }: any) {
           </View>
 
           {item.description ? (
-            <Text style={styles.areaCardDescription} numberOfLines={2}>
+            <Text style={[styles.areaCardDescription, { color: theme.textSecondary }]} numberOfLines={2}>
               {item.description}
             </Text>
           ) : null}
@@ -324,12 +327,12 @@ export default function AreasSearchScreen({ navigation, route }: any) {
           <View style={styles.areaCardFooter}>
             <View style={styles.areaStats}>
               <View style={styles.areaStat}>
-                <Ionicons name="people-outline" size={14} color="#8E8E93" />
-                <Text style={styles.areaStatText}>{item.memberCount}</Text>
+                <Ionicons name="people-outline" size={14} color={theme.textSecondary} />
+                <Text style={[styles.areaStatText, { color: theme.textSecondary }]}>{item.memberCount}</Text>
               </View>
               <View style={styles.areaStat}>
-                <Ionicons name="radio-outline" size={14} color="#8E8E93" />
-                <Text style={styles.areaStatText}>{(item.radius / 1000).toFixed(1)} km</Text>
+                <Ionicons name="radio-outline" size={14} color={theme.textSecondary} />
+                <Text style={[styles.areaStatText, { color: theme.textSecondary }]}>{(item.radius / 1000).toFixed(1)} km</Text>
               </View>
             </View>
 
@@ -374,8 +377,8 @@ export default function AreasSearchScreen({ navigation, route }: any) {
     if (loadingNearby) {
       return (
         <View style={styles.loadingSection}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingSectionText}>Buscando areas cercanas...</Text>
+          <ActivityIndicator size="large" color={theme.primary.main} />
+          <Text style={[styles.loadingSectionText, { color: theme.textSecondary }]}>Buscando areas cercanas...</Text>
         </View>
       );
     }
@@ -383,16 +386,16 @@ export default function AreasSearchScreen({ navigation, route }: any) {
     if (!userLocation) {
       return (
         <View style={styles.emptySection}>
-          <View style={styles.emptySectionIcon}>
-            <Ionicons name="location-outline" size={32} color="#8E8E93" />
+          <View style={[styles.emptySectionIcon, { backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5' }]}>
+            <Ionicons name="location-outline" size={32} color={theme.textSecondary} />
           </View>
-          <Text style={styles.emptySectionTitle}>Ubicacion no disponible</Text>
-          <Text style={styles.emptySectionText}>
+          <Text style={[styles.emptySectionTitle, { color: theme.text }]}>Ubicacion no disponible</Text>
+          <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>
             Activa la ubicacion para ver areas cercanas
           </Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadNearbyAreas}>
-            <Ionicons name="refresh" size={18} color="#007AFF" />
-            <Text style={styles.retryButtonText}>Reintentar</Text>
+          <TouchableOpacity style={[styles.retryButton, { borderColor: theme.primary.main }]} onPress={loadNearbyAreas}>
+            <Ionicons name="refresh" size={18} color={theme.primary.main} />
+            <Text style={[styles.retryButtonText, { color: theme.primary.main }]}>Reintentar</Text>
           </TouchableOpacity>
         </View>
       );
@@ -403,11 +406,11 @@ export default function AreasSearchScreen({ navigation, route }: any) {
     if (nearbyAreas.length === 0) {
       return (
         <View style={styles.emptySection}>
-          <View style={styles.emptySectionIcon}>
-            <Ionicons name="compass-outline" size={32} color="#8E8E93" />
+          <View style={[styles.emptySectionIcon, { backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5' }]}>
+            <Ionicons name="compass-outline" size={32} color={theme.textSecondary} />
           </View>
-          <Text style={styles.emptySectionTitle}>Sin areas cercanas</Text>
-          <Text style={styles.emptySectionText}>
+          <Text style={[styles.emptySectionTitle, { color: theme.text }]}>Sin areas cercanas</Text>
+          <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>
             No encontramos areas de interes cerca de tu ubicacion
           </Text>
         </View>
@@ -417,11 +420,11 @@ export default function AreasSearchScreen({ navigation, route }: any) {
     if (suggestedAreas.length === 0) {
       return (
         <View style={styles.emptySection}>
-          <View style={[styles.emptySectionIcon, { backgroundColor: '#E8F5E9' }]}>
+          <View style={[styles.emptySectionIcon, { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.2)' : '#E8F5E9' }]}>
             <Ionicons name="checkmark-circle" size={32} color="#34C759" />
           </View>
-          <Text style={styles.emptySectionTitle}>Ya eres miembro</Text>
-          <Text style={styles.emptySectionText}>
+          <Text style={[styles.emptySectionTitle, { color: theme.text }]}>Ya eres miembro</Text>
+          <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>
             Ya perteneces a todas las areas cercanas disponibles
           </Text>
         </View>
@@ -431,8 +434,8 @@ export default function AreasSearchScreen({ navigation, route }: any) {
     return (
       <View style={styles.suggestionsSection}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Sugerencias para ti</Text>
-          <Text style={styles.sectionSubtitle}>Basado en tu ubicacion actual</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Sugerencias para ti</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Basado en tu ubicacion actual</Text>
         </View>
         <FlatList
           horizontal
@@ -449,7 +452,10 @@ export default function AreasSearchScreen({ navigation, route }: any) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
+      {/* SVG Background Pattern */}
+      <ObjectsPatternBackground />
+
       <Toast
         title={toast.message}
         type={toast.type}
@@ -459,25 +465,25 @@ export default function AreasSearchScreen({ navigation, route }: any) {
       />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Explorar</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Explorar</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#8E8E93" />
+      <View style={[styles.searchContainer, { backgroundColor: theme.surface }]}>
+        <View style={[styles.searchBar, { backgroundColor: isDark ? '#2C2C2E' : '#EFEFEF' }]}>
+          <Ionicons name="search" size={20} color={theme.textSecondary} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: theme.text }]}
             placeholder="Buscar areas..."
-            placeholderTextColor="#8E8E93"
+            placeholderTextColor={theme.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={handleSearch}
@@ -489,7 +495,7 @@ export default function AreasSearchScreen({ navigation, route }: any) {
               setSearched(false);
               setAreas([]);
             }}>
-              <Ionicons name="close-circle" size={20} color="#8E8E93" />
+              <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -498,15 +504,15 @@ export default function AreasSearchScreen({ navigation, route }: any) {
       {/* Content */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Buscando...</Text>
+          <ActivityIndicator size="large" color={theme.primary.main} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Buscando...</Text>
         </View>
       ) : searched ? (
         areas.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="search-outline" size={64} color="#E0E0E0" />
-            <Text style={styles.emptyTitle}>Sin resultados</Text>
-            <Text style={styles.emptyText}>
+            <Ionicons name="search-outline" size={64} color={theme.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>Sin resultados</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
               No encontramos areas con ese nombre
             </Text>
           </View>
@@ -526,10 +532,10 @@ export default function AreasSearchScreen({ navigation, route }: any) {
           {renderNearbySuggestions()}
 
           <View style={styles.discoverSection}>
-            <View style={styles.discoverCard}>
-              <Ionicons name="compass" size={40} color="#007AFF" />
-              <Text style={styles.discoverTitle}>Descubre comunidades</Text>
-              <Text style={styles.discoverText}>
+            <View style={[styles.discoverCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}>
+              <Ionicons name="compass" size={40} color={theme.primary.main} />
+              <Text style={[styles.discoverTitle, { color: theme.text }]}>Descubre comunidades</Text>
+              <Text style={[styles.discoverText, { color: theme.textSecondary }]}>
                 Busca por nombre o explora las sugerencias basadas en tu ubicacion
               </Text>
             </View>

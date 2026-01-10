@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Image,
   Animated,
   PanResponder,
   Dimensions,
@@ -13,6 +12,8 @@ import {
   Share,
   Alert,
 } from 'react-native';
+import { SkeletonImage } from './SkeletonImage';
+import { FadeInView } from './FadeInView';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, G, Rect, Defs, Pattern } from 'react-native-svg';
@@ -262,7 +263,7 @@ const emptyStyles = StyleSheet.create({
 
 // Background pattern component with trackable objects (WhatsApp style)
 const PatternBackground = React.memo(() => {
-  const ICON_COLOR = '#D1D5DB';
+  const ICON_COLOR = 'rgba(209, 213, 219, 0.15)'; // Much lower opacity for subtle background
   const ICON_SIZE = 20;
   const PATTERN_SIZE = 55;
 
@@ -391,6 +392,7 @@ const patternStyles = StyleSheet.create({
 });
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
+  GENERAL: 'General',
   THEFT: 'Robo',
   LOST: 'Extravío',
   ACCIDENT: 'Accidente',
@@ -436,14 +438,15 @@ const formatRelativeTime = (dateString: string): string => {
   return diffInYears === 1 ? 'hace 1 año' : `hace ${diffInYears} años`;
 };
 
-// Sort events: urgent first, then by creation date (newest first)
+// Sort events: active urgent first, then by creation date (newest first)
+// Closed urgent events are treated as normal events (sorted by date only)
 const sortEvents = (events: EventWithCounts[]): EventWithCounts[] => {
   return [...events].sort((a, b) => {
-    // Urgent events first
-    const aUrgent = (a as any).isUrgent ? 1 : 0;
-    const bUrgent = (b as any).isUrgent ? 1 : 0;
-    if (bUrgent !== aUrgent) {
-      return bUrgent - aUrgent;
+    // Only active urgent events (not closed) get priority
+    const aActiveUrgent = (a as any).isUrgent && a.status !== 'CLOSED' ? 1 : 0;
+    const bActiveUrgent = (b as any).isUrgent && b.status !== 'CLOSED' ? 1 : 0;
+    if (bActiveUrgent !== aActiveUrgent) {
+      return bActiveUrgent - aActiveUrgent;
     }
     // Then by creation date (newest first)
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -451,6 +454,7 @@ const sortEvents = (events: EventWithCounts[]): EventWithCounts[] => {
 };
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
+  GENERAL: staticColors.primary.main,
   THEFT: staticColors.error.main,
   LOST: staticColors.accent.main,
   ACCIDENT: staticColors.warning.main,
@@ -655,12 +659,17 @@ export default function SlidingEventFeed({
     }
   };
 
-  const renderEventCard = ({ item }: { item: EventWithCounts }) => (
-    <View style={[
-      styles.card,
-      { backgroundColor: theme.bg.primary, borderColor: theme.glass.border },
-      (item as any).isUrgent && { borderColor: theme.error.main, borderWidth: 2 }
-    ]}>
+  const renderEventCard = ({ item, index }: { item: EventWithCounts; index: number }) => {
+    // Only show urgent styling if event is urgent AND not closed
+    const isActiveUrgent = (item as any).isUrgent && item.status !== 'CLOSED';
+
+    return (
+      <FadeInView delay={index * 50} duration={350}>
+      <View style={[
+        styles.card,
+        { backgroundColor: theme.surface },
+        isActiveUrgent && { borderColor: theme.error.main, borderWidth: 2 }
+      ]}>
       <TouchableOpacity
         onPress={() => onEventPress?.(item.id)}
         activeOpacity={0.85}
@@ -668,9 +677,12 @@ export default function SlidingEventFeed({
         {/* Image at the top - full width */}
         {item.imageUrl && (
           <View style={styles.imageContainer}>
-            <Image
+            <SkeletonImage
               source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
               style={styles.eventImage}
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk"
             />
             {/* Gradient overlay for better text readability */}
             <View style={styles.imageOverlay} />
@@ -697,18 +709,23 @@ export default function SlidingEventFeed({
                   {EVENT_TYPE_LABELS[item.type]}
                 </Text>
               </View>
+              {/* Status badge */}
               <View
                 style={[
                   styles.statusBadge,
-                  { backgroundColor: theme.primary.main },
-                  item.status === 'CLOSED' && { backgroundColor: theme.success.main },
+                  { backgroundColor: staticColors.success.subtle },
+                  item.status === 'CLOSED' && { backgroundColor: staticColors.error.main },
                 ]}
               >
-                <Text style={styles.statusBadgeText}>
+                <Text style={[
+                  styles.statusBadgeText,
+                  { color: staticColors.success.dark },
+                  item.status === 'CLOSED' && { color: '#fff' },
+                ]}>
                   {item.status === 'IN_PROGRESS' ? 'En Progreso' : 'Cerrado'}
                 </Text>
               </View>
-              {(item as any).isUrgent && item.status !== 'CLOSED' && <UrgentPulsingDot color={theme.error.main} />}
+              {isActiveUrgent && <UrgentPulsingDot color={theme.error.main} />}
               {item.status === 'CLOSED' && (
                 <View style={styles.closedStaticDot} />
               )}
@@ -716,21 +733,21 @@ export default function SlidingEventFeed({
             {/* Time on the right if no image */}
             {!item.imageUrl && (
               <View style={styles.timeContainer}>
-                <Ionicons name="time-outline" size={12} color={theme.text.tertiary} />
-                <Text style={[styles.timeText, { color: theme.text.tertiary }]}>{formatRelativeTime(item.createdAt)}</Text>
+                <Ionicons name="time-outline" size={12} color={theme.textTertiary} />
+                <Text style={[styles.timeText, { color: theme.textTertiary }]}>{formatRelativeTime(item.createdAt)}</Text>
               </View>
             )}
           </View>
 
           {/* Description */}
-          <Text style={[styles.description, { color: theme.text.primary }]} numberOfLines={2}>
+          <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
             {item.description}
           </Text>
 
           {/* Device info */}
           <View style={styles.deviceRow}>
-            <Ionicons name="phone-portrait-outline" size={14} color={theme.text.tertiary} />
-            <Text style={[styles.deviceText, { color: theme.text.tertiary }]}>
+            <Ionicons name="phone-portrait-outline" size={14} color={theme.textTertiary} />
+            <Text style={[styles.deviceText, { color: theme.textTertiary }]}>
               {item.device?.name || 'Sin dispositivo'}
             </Text>
           </View>
@@ -746,9 +763,9 @@ export default function SlidingEventFeed({
           <Ionicons
             name={item.userReacted ? 'heart' : 'heart-outline'}
             size={22}
-            color={item.userReacted ? theme.error.main : theme.text.tertiary}
+            color={item.userReacted ? theme.error.main : theme.textTertiary}
           />
-          <Text style={[styles.interactionCount, { color: theme.text.tertiary }, item.userReacted && { color: theme.error.main }]}>
+          <Text style={[styles.interactionCount, { color: theme.textTertiary }, item.userReacted && { color: theme.error.main }]}>
             {(item.reactionCount || 0).toString()}
           </Text>
         </TouchableOpacity>
@@ -760,9 +777,9 @@ export default function SlidingEventFeed({
           <Ionicons
             name="chatbubble-outline"
             size={22}
-            color={theme.text.tertiary}
+            color={theme.textTertiary}
           />
-          <Text style={[styles.interactionCount, { color: theme.text.tertiary }]}>
+          <Text style={[styles.interactionCount, { color: theme.textTertiary }]}>
             {(item.commentCount || 0).toString()}
           </Text>
         </TouchableOpacity>
@@ -771,11 +788,13 @@ export default function SlidingEventFeed({
           style={styles.interactionButton}
           onPress={() => handleShareEvent(item)}
         >
-          <Ionicons name="paper-plane-outline" size={22} color={theme.text.tertiary} />
+          <Ionicons name="paper-plane-outline" size={22} color={theme.textTertiary} />
         </TouchableOpacity>
       </View>
     </View>
+      </FadeInView>
   );
+  }
 
   return (
     <Animated.View
@@ -784,14 +803,14 @@ export default function SlidingEventFeed({
         {
           height: height,
           zIndex: feedState === 'minimized' ? 50 : 100,
-          backgroundColor: theme.bg.primary,
+          backgroundColor: theme.bg,
         },
       ]}
     >
       {/* Background pattern */}
       <PatternBackground />
 
-      <View {...panResponder.panHandlers} style={[styles.header, { backgroundColor: theme.bg.primary }]}>
+      <View {...panResponder.panHandlers} style={[styles.header, { backgroundColor: theme.bg }]}>
         <View style={[styles.dragIndicator, { backgroundColor: theme.glass.borderStrong }]} />
         <View style={styles.headerContent}>
           <View style={styles.headerTitleContainer}>
@@ -800,7 +819,7 @@ export default function SlidingEventFeed({
                 <Ionicons name="people" size={14} color={theme.primary.main} />
               </View>
             )}
-            <Text style={[styles.headerTitle, { color: theme.text.primary }]}>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>
               {isGroupMode
                 ? `Eventos del grupo${groupName ? ` · ${groupName}` : ''}`
                 : `Eventos en el area (${events.length})`
@@ -809,7 +828,7 @@ export default function SlidingEventFeed({
           </View>
           {onFilterPress && !isGroupMode && (
             <TouchableOpacity onPress={onFilterPress} style={[styles.filterButton, { backgroundColor: theme.glass.bg }]}>
-              <Ionicons name="options-outline" size={18} color={theme.text.secondary} />
+              <Ionicons name="options-outline" size={18} color={theme.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -827,21 +846,23 @@ export default function SlidingEventFeed({
         style={{ flex: 1, display: feedState === 'minimized' ? 'none' : 'flex' }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <AnimatedEmptyIllustration isGroupMode={isGroupMode} />
-            <Text style={[styles.emptyTitle, { color: theme.text.primary }]}>
-              {isGroupMode ? 'Sin eventos en el grupo' : 'Todo tranquilo por aqui'}
-            </Text>
-            <Text style={[styles.emptyText, { color: theme.text.secondary }]}>
-              {isGroupMode
-                ? 'Se el primero en reportar algo importante para tu grupo'
-                : 'No hay eventos reportados en esta zona. Ayuda a tu comunidad reportando incidentes.'
-              }
-            </Text>
-            <View style={[styles.emptyHint, { backgroundColor: theme.primary.subtle }]}>
-              <Ionicons name="add-circle-outline" size={16} color={theme.primary.main} />
-              <Text style={[styles.emptyHintText, { color: theme.primary.main }]}>
-                Toca + en Eventos para crear uno
+            <View style={[styles.emptyStateCard, { backgroundColor: theme.surface }]}>
+              <AnimatedEmptyIllustration isGroupMode={isGroupMode} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                {isGroupMode ? 'Sin eventos en el grupo' : 'Todo tranquilo por aqui'}
               </Text>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                {isGroupMode
+                  ? 'Se el primero en reportar algo importante para tu grupo'
+                  : 'No hay eventos reportados en esta zona. Ayuda a tu comunidad reportando incidentes.'
+                }
+              </Text>
+              <View style={[styles.emptyHint, { backgroundColor: theme.primary.subtle }]}>
+                <Ionicons name="add-circle-outline" size={16} color={theme.primary.main} />
+                <Text style={[styles.emptyHintText, { color: theme.primary.main }]}>
+                  Toca + en Eventos para crear uno
+                </Text>
+              </View>
             </View>
           </View>
         }
@@ -909,19 +930,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   listContent: {
-    padding: 12,
-    paddingTop: 8,
+    paddingTop: 0,
     paddingBottom: 32,
   },
   card: {
-    borderRadius: radius.xl,
-    marginBottom: 14,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    marginBottom: 16,
     overflow: 'hidden',
   },
   imageContainer: {
@@ -931,7 +944,7 @@ const styles = StyleSheet.create({
   eventImage: {
     width: '100%',
     height: 180,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(139, 92, 246, 0.12)',
   },
   imageOverlay: {
     position: 'absolute',
@@ -954,6 +967,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
+  statusBadgeOnImage: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
   timeBadgeText: {
     color: '#fff',
     fontSize: 12,
@@ -972,7 +993,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
+    flexShrink: 1,
     flexWrap: 'wrap',
   },
   typeBadge: {
@@ -1024,8 +1045,19 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     paddingVertical: 24,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
     alignItems: 'center',
+  },
+  emptyStateCard: {
+    padding: 24,
+    borderRadius: radius.xl,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    width: '100%',
   },
   emptyTitle: {
     fontSize: 18,

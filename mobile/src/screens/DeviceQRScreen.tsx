@@ -15,6 +15,7 @@ import { deviceApi, DeviceQRInfo } from '../services/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import { BASE_URL } from '../config/environment';
+import { useTheme } from '../contexts/ThemeContext';
 
 export function DeviceQRScreen({ navigation, route }: any) {
   const { deviceId } = route.params;
@@ -23,6 +24,7 @@ export function DeviceQRScreen({ navigation, route }: any) {
   const [toggling, setToggling] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
 
   const loadDevice = async () => {
     try {
@@ -97,19 +99,19 @@ export function DeviceQRScreen({ navigation, route }: any) {
 
   if (loading) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+            <Ionicons name="chevron-back" size={24} color={theme.primary.main} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Codigo QR</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Codigo QR</Text>
           <View style={styles.headerRight} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color={theme.primary.main} />
         </View>
       </View>
     );
@@ -121,38 +123,38 @@ export function DeviceQRScreen({ navigation, route }: any) {
   const isTaggedObject = device.type === 'TAGGED_OBJECT';
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="chevron-back" size={24} color="#007AFF" />
+          <Ionicons name="chevron-back" size={24} color={theme.primary.main} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Codigo QR</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Codigo QR</Text>
         <View style={styles.headerRight} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* Device Info */}
         <View style={styles.deviceInfo}>
-          <View style={styles.deviceIcon}>
+          <View style={[styles.deviceIcon, { backgroundColor: isDark ? '#1C3A5E' : '#E3F2FD' }]}>
             <Ionicons
               name={isTaggedObject ? 'pricetag' : 'hardware-chip'}
               size={28}
-              color="#007AFF"
+              color={theme.primary.main}
             />
           </View>
           <View>
-            <Text style={styles.deviceName}>{device.name}</Text>
-            <Text style={styles.deviceType}>
+            <Text style={[styles.deviceName, { color: theme.text }]}>{device.name}</Text>
+            <Text style={[styles.deviceType, { color: theme.textSecondary }]}>
               {isTaggedObject ? 'Tag' : 'Dispositivo GPS'}
             </Text>
           </View>
         </View>
 
         {/* QR Code Card */}
-        <View style={[styles.qrCard, !device.qrEnabled && styles.qrCardDisabled]}>
+        <View style={[styles.qrCard, { backgroundColor: theme.surface }, !device.qrEnabled && styles.qrCardDisabled]}>
           {device.qrEnabled ? (
             <>
               <View style={styles.qrContainer}>
@@ -163,15 +165,15 @@ export function DeviceQRScreen({ navigation, route }: any) {
                   color="#000"
                 />
               </View>
-              <Text style={styles.qrHint}>
-                Escanea este codigo para contactar al dueno
+              <Text style={[styles.qrHint, { color: theme.textSecondary }]}>
+                Escanea este código para contactar al dueño
               </Text>
             </>
           ) : (
             <View style={styles.disabledOverlay}>
-              <Ionicons name="eye-off" size={48} color="#8E8E93" />
-              <Text style={styles.disabledText}>Codigo QR desactivado</Text>
-              <Text style={styles.disabledHint}>
+              <Ionicons name="eye-off" size={48} color={theme.textSecondary} />
+              <Text style={[styles.disabledText, { color: theme.text }]}>Codigo QR desactivado</Text>
+              <Text style={[styles.disabledHint, { color: theme.textSecondary }]}>
                 Activa el codigo para que otros puedan contactarte
               </Text>
             </View>
@@ -179,17 +181,17 @@ export function DeviceQRScreen({ navigation, route }: any) {
         </View>
 
         {/* Toggle Section */}
-        <View style={styles.settingCard}>
+        <View style={[styles.settingCard, { backgroundColor: theme.surface }]}>
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Ionicons
                 name={device.qrEnabled ? 'eye' : 'eye-off'}
                 size={24}
-                color={device.qrEnabled ? '#34C759' : '#8E8E93'}
+                color={device.qrEnabled ? '#34C759' : theme.textSecondary}
               />
               <View style={styles.settingTextContainer}>
-                <Text style={styles.settingTitle}>Codigo QR activo</Text>
-                <Text style={styles.settingDescription}>
+                <Text style={[styles.settingTitle, { color: theme.text }]}>Codigo QR activo</Text>
+                <Text style={[styles.settingDescription, { color: theme.textSecondary }]}>
                   {device.qrEnabled
                     ? 'Otros pueden escanear y contactarte'
                     : 'El codigo QR no funciona actualmente'}
@@ -197,13 +199,13 @@ export function DeviceQRScreen({ navigation, route }: any) {
               </View>
             </View>
             {toggling ? (
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color={theme.primary.main} />
             ) : (
               <Switch
                 value={device.qrEnabled}
                 onValueChange={handleToggleQR}
-                trackColor={{ false: '#E5E5EA', true: '#34C759' }}
-                ios_backgroundColor="#E5E5EA"
+                trackColor={{ false: isDark ? '#39393D' : '#E5E5EA', true: '#34C759' }}
+                ios_backgroundColor={isDark ? '#39393D' : '#E5E5EA'}
               />
             )}
           </View>
@@ -212,7 +214,7 @@ export function DeviceQRScreen({ navigation, route }: any) {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.shareButton]}
+            style={[styles.actionButton, { backgroundColor: theme.primary.main }]}
             onPress={handleShare}
             disabled={!device.qrEnabled}
           >
@@ -221,7 +223,7 @@ export function DeviceQRScreen({ navigation, route }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, styles.regenerateButton]}
+            style={[styles.actionButton, { backgroundColor: theme.surface, borderWidth: 1, borderColor: '#FF9500' }]}
             onPress={handleRegenerateQR}
             disabled={regenerating}
           >
@@ -239,38 +241,38 @@ export function DeviceQRScreen({ navigation, route }: any) {
         </View>
 
         {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>Como funciona</Text>
+        <View style={[styles.infoBox, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.infoTitle, { color: theme.text }]}>Como funciona</Text>
           <View style={styles.infoItem}>
-            <View style={styles.infoBullet}>
+            <View style={[styles.infoBullet, { backgroundColor: theme.primary.main }]}>
               <Text style={styles.infoBulletText}>1</Text>
             </View>
-            <Text style={styles.infoItemText}>
+            <Text style={[styles.infoItemText, { color: theme.textSecondary }]}>
               Imprime o pega este codigo QR en tu objeto
             </Text>
           </View>
           <View style={styles.infoItem}>
-            <View style={styles.infoBullet}>
+            <View style={[styles.infoBullet, { backgroundColor: theme.primary.main }]}>
               <Text style={styles.infoBulletText}>2</Text>
             </View>
-            <Text style={styles.infoItemText}>
+            <Text style={[styles.infoItemText, { color: theme.textSecondary }]}>
               Quien lo encuentre puede escanear el codigo
             </Text>
           </View>
           <View style={styles.infoItem}>
-            <View style={styles.infoBullet}>
+            <View style={[styles.infoBullet, { backgroundColor: theme.primary.main }]}>
               <Text style={styles.infoBulletText}>3</Text>
             </View>
-            <Text style={styles.infoItemText}>
+            <Text style={[styles.infoItemText, { color: theme.textSecondary }]}>
               Se abrira un chat anonimo para coordinarse
             </Text>
           </View>
         </View>
 
         {/* Privacy Note */}
-        <View style={styles.privacyNote}>
+        <View style={[styles.privacyNote, { backgroundColor: isDark ? '#1A3A2E' : '#E8F8ED' }]}>
           <Ionicons name="shield-checkmark" size={20} color="#34C759" />
-          <Text style={styles.privacyText}>
+          <Text style={[styles.privacyText, { color: isDark ? '#6FCF97' : '#2D6A4F' }]}>
             Tu informacion personal nunca se comparte automaticamente. Solo compartes lo que decides en el chat.
           </Text>
         </View>

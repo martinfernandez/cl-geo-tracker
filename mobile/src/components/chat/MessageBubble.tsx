@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface Message {
   id: string;
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export default function MessageBubble({ message, isOwnMessage, showTimestamp = true, showSenderName = false }: Props) {
+  const { theme, isDark } = useTheme();
   const formattedTime = formatDistanceToNow(new Date(message.createdAt), {
     addSuffix: true,
     locale: es,
@@ -32,23 +34,35 @@ export default function MessageBubble({ message, isOwnMessage, showTimestamp = t
   return (
     <View style={[styles.container, isOwnMessage && styles.ownMessageContainer]}>
       {showSenderName && message.sender && (
-        <Text style={styles.senderName}>{message.sender.name}</Text>
+        <Text style={[styles.senderName, { color: theme.primary.main }]}>{message.sender.name}</Text>
       )}
-      <View style={[styles.bubble, isOwnMessage ? styles.ownBubble : styles.otherBubble]}>
-        <Text style={[styles.messageText, isOwnMessage && styles.ownMessageText]}>
+      <View style={[
+        styles.bubble,
+        isOwnMessage
+          ? styles.ownBubble
+          : [styles.otherBubble, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA' }]
+      ]}>
+        <Text style={[
+          styles.messageText,
+          { color: isOwnMessage ? '#fff' : theme.text }
+        ]}>
           {message.content}
         </Text>
       </View>
 
       {showTimestamp && (
-        <View style={[styles.timestampContainer, isOwnMessage && styles.ownTimestampContainer]}>
-          <Text style={styles.timestamp}>{formattedTime}</Text>
+        <View style={[
+          styles.timestampContainer,
+          { backgroundColor: isDark ? 'rgba(44, 44, 46, 0.9)' : 'rgba(255, 255, 255, 0.85)' },
+          isOwnMessage && styles.ownTimestampContainer
+        ]}>
+          <Text style={[styles.timestamp, { color: theme.textSecondary }]}>{formattedTime}</Text>
           {isOwnMessage && (
             <View style={styles.readReceipt}>
               <Ionicons
                 name={message.isRead ? 'checkmark-done' : 'checkmark'}
                 size={14}
-                color={message.isRead ? '#007AFF' : '#8E8E93'}
+                color={message.isRead ? theme.primary.main : theme.textTertiary}
               />
             </View>
           )}

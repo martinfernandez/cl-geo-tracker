@@ -24,6 +24,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
 import { BASE_URL } from '../config/environment';
+import { stopBackgroundTracking } from '../services/backgroundLocation';
+import UserAvatar from '../components/UserAvatar';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -96,7 +98,7 @@ const formatRelativeTime = (dateString: string): string => {
 export default function EventDetailScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
   const { showSuccess, showError } = useToast();
-  const { isDark } = useTheme();
+  const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [event, setEvent] = useState<any>(null);
@@ -269,7 +271,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         parentCommentId: replyingTo || undefined,
       });
 
-      setComments((prevComments) => [...prevComments, newComment]);
+      setComments((prevComments) => [newComment, ...prevComments]);
       setCommentText('');
       setReplyingTo(null);
     } catch (error) {
@@ -280,18 +282,32 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleToggleStatus = async () => {
+  const [showStatusConfirmModal, setShowStatusConfirmModal] = useState(false);
+
+  const handleToggleStatus = () => {
+    setShowActionSheet(false);
+    setShowStatusConfirmModal(true);
+  };
+
+  const confirmToggleStatus = async () => {
+    setShowStatusConfirmModal(false);
     try {
       const newStatus = event.status === 'IN_PROGRESS' ? 'CLOSED' : 'IN_PROGRESS';
       await eventApi.update(eventId, { status: newStatus });
       setEvent((prev: any) => ({ ...prev, status: newStatus }));
-      setShowActionSheet(false);
+
+      // Stop background tracking if closing an event that uses phoneDevice
+      if (newStatus === 'CLOSED' && event.phoneDeviceId && event.realTimeTracking) {
+        console.log('[EventDetail] Stopping background tracking for closed event');
+        await stopBackgroundTracking();
+      }
+
       showSuccess(
-        newStatus === 'CLOSED' ? 'Evento cerrado correctamente' : 'Evento reabierto correctamente'
+        newStatus === 'CLOSED' ? 'Evento cerrado' : 'Evento reabierto'
       );
     } catch (error) {
       console.error('Error toggling event status:', error);
-      showError('No se pudo actualizar el estado del evento');
+      showError('No se pudo actualizar el estado');
     }
   };
 
@@ -370,20 +386,24 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     return (
       <View
         key={comment.id}
-        style={[styles.commentContainer, isReply && styles.replyContainer]}
+        style={[
+          styles.commentContainer,
+          { backgroundColor: isDark ? '#2C2C2E' : '#fafafa', borderColor: theme.glass.border },
+          isReply && [styles.replyContainer, { backgroundColor: theme.bg }]
+        ]}
       >
         <View style={styles.commentHeader}>
           <TouchableOpacity
             style={styles.commentUserRow}
             onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}
           >
-            <View style={styles.commentAvatar}>
+            <View style={[styles.commentAvatar, { backgroundColor: theme.primary.main }]}>
               <Text style={styles.commentAvatarText}>{getUserInitial(comment.user.name)}</Text>
             </View>
-            <Text style={styles.commentAuthor}>{comment.user.name}</Text>
+            <Text style={[styles.commentAuthor, { color: theme.text }]}>{comment.user.name}</Text>
           </TouchableOpacity>
           <View style={styles.commentHeaderRight}>
-            <Text style={styles.commentDate}>
+            <Text style={[styles.commentDate, { color: theme.textTertiary }]}>
               {formatRelativeTime(comment.createdAt)}
             </Text>
             {isOwnComment && (
@@ -391,18 +411,18 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 onPress={() => handleDeleteComment(comment.id)}
                 style={styles.deleteButton}
               >
-                <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+                <Ionicons name="trash-outline" size={16} color={theme.error.main} />
               </TouchableOpacity>
             )}
           </View>
         </View>
-        <Text style={styles.commentContent}>{comment.content}</Text>
+        <Text style={[styles.commentContent, { color: theme.text }]}>{comment.content}</Text>
         <View style={styles.commentActions}>
           <TouchableOpacity
             onPress={() => setReplyingTo(comment.id)}
             style={styles.replyButton}
           >
-            <Text style={styles.replyButtonText}>Responder</Text>
+            <Text style={[styles.replyButtonText, { color: theme.primary.main }]}>Responder</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleCommentLike(comment.id)}
@@ -411,10 +431,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             <Ionicons
               name={userLiked ? 'heart' : 'heart-outline'}
               size={16}
-              color={userLiked ? '#ed4956' : '#666'}
+              color={userLiked ? '#ed4956' : theme.textTertiary}
             />
             {likeCount > 0 && (
-              <Text style={[styles.likeCount, userLiked && styles.likeCountActive]}>
+              <Text style={[styles.likeCount, { color: theme.textTertiary }, userLiked && styles.likeCountActive]}>
                 {likeCount}
               </Text>
             )}
@@ -431,20 +451,20 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando detalles...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.primary.main} />
+        <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Cargando detalles...</Text>
       </View>
     );
   }
 
   if (!event) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>No se pudo cargar el evento</Text>
+      <View style={[styles.errorContainer, { backgroundColor: theme.bg }]}>
+        <Text style={[styles.errorText, { color: theme.textSecondary }]}>No se pudo cargar el evento</Text>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.backButton}
+          style={[styles.backButton, { backgroundColor: theme.primary.main }]}
         >
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
@@ -457,16 +477,16 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
       keyboardVerticalOffset={0}
     >
       {/* Header - Simple back button */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.glass.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <View style={styles.headerSpacer} />
         {isOwner && (
@@ -474,7 +494,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             onPress={() => setShowActionSheet(true)}
             style={styles.headerButton}
           >
-            <Ionicons name="ellipsis-horizontal" size={24} color="#262626" />
+            <Ionicons name="ellipsis-horizontal" size={24} color={theme.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -552,16 +572,19 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         </View>
 
         {/* User Header - Below map */}
-        <View style={styles.userHeader}>
+        <View style={[styles.userHeader, { backgroundColor: theme.bg }]}>
           <TouchableOpacity
             style={styles.userInfo}
             onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
           >
-            <View style={[styles.avatar, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
-              <Text style={styles.avatarText}>{getUserInitial(event.user.name)}</Text>
-            </View>
+            <UserAvatar
+              imageUrl={event.user.imageUrl}
+              name={event.user.name}
+              size={40}
+              backgroundColor={EVENT_TYPE_COLORS[event.type] || '#007AFF'}
+            />
             <View style={styles.userTextContainer}>
-              <Text style={styles.userName}>{event.user.name}</Text>
+              <Text style={[styles.userName, { color: theme.text }]}>{event.user.name}</Text>
               <View style={styles.userSubtitle}>
                 {event.isUrgent && <UrgentPulsingDot size="small" />}
                 <View style={[styles.typeBadgeSmall, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
@@ -580,7 +603,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             onPress={() => setShowUserMenu(true)}
             style={styles.userMenuButton}
           >
-            <Ionicons name="ellipsis-vertical" size={20} color="#262626" />
+            <Ionicons name="ellipsis-vertical" size={20} color={theme.text} />
           </TouchableOpacity>
         </View>
 
@@ -593,7 +616,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         )}
 
         {/* Interaction Bar */}
-        <View style={styles.interactionBar}>
+        <View style={[styles.interactionBar, { backgroundColor: theme.bg }]}>
           <View style={styles.interactionLeft}>
             <TouchableOpacity
               style={styles.interactionButton}
@@ -602,10 +625,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               <Ionicons
                 name={event.userReacted ? 'heart' : 'heart-outline'}
                 size={26}
-                color={event.userReacted ? '#ed4956' : '#262626'}
+                color={event.userReacted ? '#ed4956' : theme.text}
               />
               {(event.reactionCount || 0) > 0 && (
-                <Text style={[styles.interactionCount, event.userReacted && styles.interactionCountActive]}>
+                <Text style={[styles.interactionCount, { color: theme.text }, event.userReacted && styles.interactionCountActive]}>
                   {event.reactionCount}
                 </Text>
               )}
@@ -615,9 +638,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               style={styles.interactionButton}
               onPress={handleScrollToComments}
             >
-              <Ionicons name="chatbubble-outline" size={24} color="#262626" />
+              <Ionicons name="chatbubble-outline" size={24} color={theme.text} />
               {comments.length > 0 && (
-                <Text style={styles.interactionCount}>{comments.length}</Text>
+                <Text style={[styles.interactionCount, { color: theme.text }]}>{comments.length}</Text>
               )}
             </TouchableOpacity>
 
@@ -626,7 +649,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 style={styles.interactionButton}
                 onPress={handleOpenChat}
               >
-                <Ionicons name="paper-plane-outline" size={24} color="#262626" />
+                <Ionicons name="paper-plane-outline" size={24} color={theme.text} />
               </TouchableOpacity>
             )}
 
@@ -636,7 +659,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 onPress={handleOpenEventInbox}
               >
                 <View>
-                  <Ionicons name="chatbubbles-outline" size={24} color="#262626" />
+                  <Ionicons name="chatbubbles-outline" size={24} color={theme.text} />
                   {unreadMessageCount > 0 && (
                     <View style={styles.unreadBadge}>
                       <Text style={styles.unreadBadgeText}>
@@ -649,15 +672,46 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             )}
           </View>
 
-          <View style={styles.timeBadge}>
-            <Ionicons name="time-outline" size={14} color="#666" />
-            <Text style={styles.timeBadgeText}>{formatRelativeTime(event.createdAt)}</Text>
-          </View>
+          {/* Status toggle for owner */}
+          {isOwner ? (
+            <TouchableOpacity
+              style={[
+                styles.statusToggleButton,
+                event.status === 'IN_PROGRESS'
+                  ? { backgroundColor: 'rgba(255, 149, 0, 0.15)', borderColor: '#FF9500' }
+                  : { backgroundColor: 'rgba(52, 199, 89, 0.15)', borderColor: '#34C759' }
+              ]}
+              onPress={handleToggleStatus}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={event.status === 'IN_PROGRESS' ? 'time' : 'checkmark-circle'}
+                size={16}
+                color={event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759'}
+              />
+              <Text style={[
+                styles.statusToggleText,
+                { color: event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759' }
+              ]}>
+                {event.status === 'IN_PROGRESS' ? 'En progreso' : 'Cerrado'}
+              </Text>
+              <Ionicons
+                name="chevron-down"
+                size={14}
+                color={event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759'}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.timeBadge, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}>
+              <Ionicons name="time-outline" size={14} color={theme.textTertiary} />
+              <Text style={[styles.timeBadgeText, { color: theme.textTertiary }]}>{formatRelativeTime(event.createdAt)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Description */}
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.description}>
+        <View style={[styles.descriptionContainer, { backgroundColor: theme.bg }]}>
+          <Text style={[styles.description, { color: theme.text }]}>
             <Text style={styles.descriptionUserName}>{event.user.name} </Text>
             {event.description}
           </Text>
@@ -665,20 +719,20 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
         {/* Device info if available */}
         {event.device && (
-          <View style={styles.deviceInfo}>
-            <Ionicons name="hardware-chip-outline" size={14} color="#666" />
-            <Text style={styles.deviceText}>
+          <View style={[styles.deviceInfo, { backgroundColor: theme.bg }]}>
+            <Ionicons name="hardware-chip-outline" size={14} color={theme.textTertiary} />
+            <Text style={[styles.deviceText, { color: theme.textTertiary }]}>
               Dispositivo: {event.device.name || event.device.imei}
             </Text>
           </View>
         )}
 
         {/* Comments Section */}
-        <View style={styles.commentsSection}>
-          <Text style={styles.sectionTitle}>Comentarios</Text>
+        <View style={[styles.commentsSection, { backgroundColor: theme.bg, borderTopColor: theme.glass.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Comentarios</Text>
 
           {comments.length === 0 ? (
-            <Text style={styles.noCommentsText}>
+            <Text style={[styles.noCommentsText, { color: theme.textTertiary }]}>
               No hay comentarios aun. Se el primero en comentar!
             </Text>
           ) : (
@@ -693,26 +747,26 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       {/* Fixed Comment Input at Bottom */}
       <View style={[
         styles.fixedInputContainer,
-        { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 16) }
+        { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 16), backgroundColor: theme.bg, borderTopColor: theme.glass.border }
       ]}>
         {replyingTo && (
-          <View style={styles.replyingToBar}>
-            <Text style={styles.replyingToText}>
+          <View style={[styles.replyingToBar, { backgroundColor: isDark ? '#2C2C2E' : '#f0f0f0' }]}>
+            <Text style={[styles.replyingToText, { color: theme.textSecondary }]}>
               Respondiendo a un comentario
             </Text>
             <TouchableOpacity onPress={() => setReplyingTo(null)}>
-              <Ionicons name="close" size={20} color="#666" />
+              <Ionicons name="close" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
         )}
-        <View style={styles.commentInputContainer}>
+        <View style={[styles.commentInputContainer, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}>
           <TextInput
             ref={commentInputRef}
-            style={styles.commentInput}
+            style={[styles.commentInput, { color: theme.text }]}
             placeholder={
               replyingTo ? 'Escribe una respuesta...' : 'Escribe un comentario...'
             }
-            placeholderTextColor="#8E8E93"
+            placeholderTextColor={theme.textTertiary}
             value={commentText}
             onChangeText={setCommentText}
             multiline
@@ -728,9 +782,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             ]}
           >
             {submitting ? (
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color={theme.primary.main} />
             ) : (
-              <Ionicons name="send" size={20} color="#007AFF" />
+              <Ionicons name="send" size={20} color={theme.primary.main} />
             )}
           </TouchableOpacity>
         </View>
@@ -748,28 +802,28 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           activeOpacity={1}
           onPress={() => setShowActionSheet(false)}
         >
-          <View style={styles.actionSheet}>
-            <View style={styles.actionSheetHandle} />
+          <View style={[styles.actionSheet, { backgroundColor: theme.surface }]}>
+            <View style={[styles.actionSheetHandle, { backgroundColor: isDark ? '#48484A' : '#d0d0d0' }]} />
 
             <TouchableOpacity
-              style={styles.actionSheetButton}
+              style={[styles.actionSheetButton, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}
               onPress={handleToggleStatus}
             >
               <Ionicons
                 name={event?.status === 'IN_PROGRESS' ? 'checkmark-circle-outline' : 'play-circle-outline'}
                 size={24}
-                color="#262626"
+                color={theme.text}
               />
-              <Text style={styles.actionSheetButtonText}>
+              <Text style={[styles.actionSheetButtonText, { color: theme.text }]}>
                 {event?.status === 'IN_PROGRESS' ? 'Cerrar evento' : 'Reabrir evento'}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionSheetButton, styles.actionSheetButtonCancel]}
+              style={[styles.actionSheetButton, styles.actionSheetButtonCancel, { backgroundColor: theme.surface, borderColor: isDark ? '#48484A' : '#d0d0d0' }]}
               onPress={() => setShowActionSheet(false)}
             >
-              <Text style={styles.actionSheetButtonCancelText}>Cancelar</Text>
+              <Text style={[styles.actionSheetButtonCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -787,25 +841,74 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           activeOpacity={1}
           onPress={() => setShowUserMenu(false)}
         >
-          <View style={styles.actionSheet}>
-            <View style={styles.actionSheetHandle} />
+          <View style={[styles.actionSheet, { backgroundColor: theme.surface }]}>
+            <View style={[styles.actionSheetHandle, { backgroundColor: isDark ? '#48484A' : '#d0d0d0' }]} />
 
             <TouchableOpacity
-              style={styles.actionSheetButton}
+              style={[styles.actionSheetButton, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}
               onPress={handleViewUserProfile}
             >
-              <Ionicons name="person-outline" size={24} color="#262626" />
-              <Text style={styles.actionSheetButtonText}>Ver perfil de {event.user.name}</Text>
+              <Ionicons name="person-outline" size={24} color={theme.text} />
+              <Text style={[styles.actionSheetButtonText, { color: theme.text }]}>Ver perfil de {event.user.name}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionSheetButton, styles.actionSheetButtonCancel]}
+              style={[styles.actionSheetButton, styles.actionSheetButtonCancel, { backgroundColor: theme.surface, borderColor: isDark ? '#48484A' : '#d0d0d0' }]}
               onPress={() => setShowUserMenu(false)}
             >
-              <Text style={styles.actionSheetButtonCancelText}>Cancelar</Text>
+              <Text style={[styles.actionSheetButtonCancelText, { color: theme.textSecondary }]}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Status Change Confirmation Modal */}
+      <Modal
+        visible={showStatusConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowStatusConfirmModal(false)}
+      >
+        <Pressable
+          style={styles.deleteModalOverlay}
+          onPress={() => setShowStatusConfirmModal(false)}
+        >
+          <Pressable style={[styles.deleteModalContent, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.deleteModalIcon, { backgroundColor: event?.status === 'IN_PROGRESS' ? 'rgba(52, 199, 89, 0.15)' : 'rgba(255, 149, 0, 0.15)' }]}>
+              <Ionicons
+                name={event?.status === 'IN_PROGRESS' ? 'checkmark-circle' : 'play-circle'}
+                size={48}
+                color={event?.status === 'IN_PROGRESS' ? '#34C759' : '#FF9500'}
+              />
+            </View>
+            <Text style={[styles.deleteModalTitle, { color: theme.text }]}>
+              {event?.status === 'IN_PROGRESS' ? 'Cerrar evento?' : 'Reabrir evento?'}
+            </Text>
+            <Text style={[styles.deleteModalMessage, { color: theme.textSecondary }]}>
+              {event?.status === 'IN_PROGRESS'
+                ? event?.realTimeTracking
+                  ? 'Se detendra el rastreo en tiempo real y el evento se marcara como resuelto'
+                  : 'El evento se marcara como resuelto'
+                : 'El evento volvera a mostrarse como activo'}
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={[styles.deleteModalButtonSecondary, { backgroundColor: isDark ? '#2C2C2E' : '#f0f0f0' }]}
+                onPress={() => setShowStatusConfirmModal(false)}
+              >
+                <Text style={[styles.deleteModalButtonSecondaryText, { color: theme.textSecondary }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteModalButtonPrimary, { backgroundColor: event?.status === 'IN_PROGRESS' ? '#34C759' : '#FF9500' }]}
+                onPress={confirmToggleStatus}
+              >
+                <Text style={styles.deleteModalButtonPrimaryText}>
+                  {event?.status === 'IN_PROGRESS' ? 'Cerrar' : 'Reabrir'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Delete Comment Confirmation Modal */}
@@ -819,23 +922,23 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           style={styles.deleteModalOverlay}
           onPress={() => setShowDeleteConfirm(false)}
         >
-          <Pressable style={styles.deleteModalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.deleteModalContent, { backgroundColor: theme.surface }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.deleteModalIcon}>
-              <Ionicons name="trash-outline" size={48} color="#FF3B30" />
+              <Ionicons name="trash-outline" size={48} color={theme.error.main} />
             </View>
-            <Text style={styles.deleteModalTitle}>Eliminar comentario?</Text>
-            <Text style={styles.deleteModalMessage}>
+            <Text style={[styles.deleteModalTitle, { color: theme.text }]}>Eliminar comentario?</Text>
+            <Text style={[styles.deleteModalMessage, { color: theme.textSecondary }]}>
               Esta accion no se puede deshacer
             </Text>
             <View style={styles.deleteModalButtons}>
               <TouchableOpacity
-                style={styles.deleteModalButtonSecondary}
+                style={[styles.deleteModalButtonSecondary, { backgroundColor: isDark ? '#2C2C2E' : '#f0f0f0' }]}
                 onPress={() => setShowDeleteConfirm(false)}
               >
-                <Text style={styles.deleteModalButtonSecondaryText}>Cancelar</Text>
+                <Text style={[styles.deleteModalButtonSecondaryText, { color: theme.textSecondary }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.deleteModalButtonPrimary}
+                style={[styles.deleteModalButtonPrimary, { backgroundColor: theme.error.main }]}
                 onPress={confirmDeleteComment}
               >
                 <Text style={styles.deleteModalButtonPrimaryText}>Eliminar</Text>
@@ -1056,8 +1159,19 @@ const styles = StyleSheet.create({
   },
   timeBadgeText: {
     fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
+  },
+  statusToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
+  statusToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Image
   eventImage: {

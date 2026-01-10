@@ -15,9 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { deviceApi, Device as ApiDevice } from '../services/api';
 import { useDeviceStore } from '../store/useDeviceStore';
 import { Device } from '../types';
+import { useTheme } from '../contexts/ThemeContext';
+import { FadeInView } from '../components/FadeInView';
 
 // Battery indicator component
-function BatteryIndicator({ level, isLow }: { level: number | null | undefined; isLow: boolean }) {
+function BatteryIndicator({ level, isLow, isDark }: { level: number | null | undefined; isLow: boolean; isDark: boolean }) {
   if (level === null || level === undefined) {
     return null;
   }
@@ -36,8 +38,14 @@ function BatteryIndicator({ level, isLow }: { level: number | null | undefined; 
     return '#34C759';
   };
 
+  const getBatteryBgColor = () => {
+    if (isLow) return isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFEBEB';
+    if (level <= 40) return isDark ? 'rgba(255, 149, 0, 0.15)' : '#FFF8E6';
+    return isDark ? 'rgba(52, 199, 89, 0.15)' : '#E8F8ED';
+  };
+
   return (
-    <View style={[styles.batteryBadge, isLow && styles.batteryBadgeLow]}>
+    <View style={[styles.batteryBadge, { backgroundColor: getBatteryBgColor() }]}>
       <Ionicons name="battery-half" size={14} color={getBatteryColor()} />
       <Text style={[styles.batteryText, { color: getBatteryColor() }]}>{level}%</Text>
     </View>
@@ -45,7 +53,8 @@ function BatteryIndicator({ level, isLow }: { level: number | null | undefined; 
 }
 
 // Component for the pulsing status indicator
-function StatusIndicator({ isActive, size = 'normal' }: { isActive: boolean; size?: 'normal' | 'small' }) {
+// status: 'reporting' (green) | 'connected' (yellow/orange) | 'offline' (red)
+function StatusIndicator({ status, size = 'normal' }: { status: 'reporting' | 'connected' | 'offline'; size?: 'normal' | 'small' }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -83,9 +92,8 @@ function StatusIndicator({ isActive, size = 'normal' }: { isActive: boolean; siz
   }, []);
 
   const baseSize = size === 'small' ? 10 : 14;
-  const color = isActive ? '#34C759' : '#FF3B30';
-  // Inactive devices have a more subtle pulse
-  const pulseOpacity = isActive ? 0.4 : 0.2;
+  const color = status === 'reporting' ? '#34C759' : status === 'connected' ? '#FF9500' : '#FF3B30';
+  const pulseOpacity = status === 'reporting' ? 0.4 : status === 'connected' ? 0.3 : 0.2;
 
   return (
     <View style={[styles.statusIndicatorContainer, { width: baseSize * 2.5, height: baseSize * 2.5 }]}>
@@ -120,15 +128,29 @@ function StatusIndicator({ isActive, size = 'normal' }: { isActive: boolean; siz
   );
 }
 
-// Calculate if device is reporting recently (within last 5 minutes)
-// Use createdAt (server time) instead of timestamp (GPS device time)
-// because some GPS devices have incorrect internal clocks
-function isDeviceReporting(lastPosition: any): boolean {
-  if (!lastPosition) return false;
-  const lastUpdate = new Date(lastPosition.createdAt || lastPosition.timestamp);
+// Calculate device connectivity status
+// Returns: 'reporting' | 'connected' | 'offline'
+// - 'reporting': has recent GPS positions (within 5 min)
+// - 'connected': has recent battery/status updates (within 10 min) but no GPS
+// - 'offline': no recent activity
+function getDeviceStatus(device: any, lastPosition: any): 'reporting' | 'connected' | 'offline' {
   const now = new Date();
-  const diffMinutes = (now.getTime() - lastUpdate.getTime()) / (1000 * 60);
-  return diffMinutes <= 5;
+
+  // Check if reporting GPS positions
+  if (lastPosition) {
+    const positionTime = new Date(lastPosition.createdAt || lastPosition.timestamp);
+    const diffMinutes = (now.getTime() - positionTime.getTime()) / (1000 * 60);
+    if (diffMinutes <= 5) return 'reporting';
+  }
+
+  // Check if device has recent battery updates (connected but not sending GPS)
+  if (device?.batteryUpdatedAt) {
+    const batteryTime = new Date(device.batteryUpdatedAt);
+    const diffMinutes = (now.getTime() - batteryTime.getTime()) / (1000 * 60);
+    if (diffMinutes <= 10) return 'connected';
+  }
+
+  return 'offline';
 }
 
 // Format time ago
@@ -149,6 +171,7 @@ export function DevicesScreen({ navigation }: any) {
   const { devices, setDevices } = useDeviceStore();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { theme, isDark } = useTheme();
 
   const loadDevices = async () => {
     try {
@@ -192,7 +215,7 @@ export function DevicesScreen({ navigation }: any) {
 
   const renderGPSDevice = ({ item }: { item: Device }) => {
     const lastPosition = (item as any).positions?.[0];
-    const isReporting = isDeviceReporting(lastPosition);
+    const deviceStatus = getDeviceStatus(item, lastPosition);
     // Use createdAt (server time) instead of timestamp (GPS device time)
     const lastUpdateDate = lastPosition
       ? new Date(lastPosition.createdAt || lastPosition.timestamp)
@@ -201,34 +224,69 @@ export function DevicesScreen({ navigation }: any) {
     // Battery = 0 means external power/no battery, so only show low battery warning for 1-20%
     const isLowBattery = batteryLevel !== null && batteryLevel !== undefined && batteryLevel > 0 && batteryLevel <= 20;
 
+    // Get status label and style based on device status
+    const getStatusLabel = () => {
+      switch (deviceStatus) {
+        case 'reporting':
+          return 'Reportando GPS';
+        case 'connected':
+          return 'Conectado';
+        case 'offline':
+          return 'Sin conexión';
+      }
+    };
+
+    const getStatusStyle = () => {
+      switch (deviceStatus) {
+        case 'reporting':
+          return styles.statusActive;
+        case 'connected':
+          return styles.statusConnected;
+        case 'offline':
+          return styles.statusInactive;
+      }
+    };
+
+    // Determine border color based on connection status
+    const getBorderColor = () => {
+      switch (deviceStatus) {
+        case 'reporting':
+          return '#34C759'; // Green
+        case 'connected':
+          return '#FF9500'; // Orange
+        case 'offline':
+          return '#FF3B30'; // Red
+      }
+    };
+
     return (
       <TouchableOpacity
-        style={[styles.deviceCard, isLowBattery && styles.deviceCardLowBattery]}
+        style={[styles.deviceCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: getBorderColor() }]}
         onPress={() => navigation.navigate('DeviceDetail', { deviceId: item.id })}
       >
         <View style={styles.deviceRow}>
-          <StatusIndicator isActive={isReporting} />
+          <StatusIndicator status={deviceStatus} />
           <View style={styles.deviceInfo}>
             <View style={styles.deviceHeader}>
-              <Text style={styles.deviceName}>{item.name || item.imei}</Text>
+              <Text style={[styles.deviceName, { color: theme.text }]}>{item.name || item.imei}</Text>
               <View style={styles.deviceHeaderRight}>
-                <BatteryIndicator level={batteryLevel} isLow={isLowBattery} />
-                <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+                <BatteryIndicator level={batteryLevel} isLow={isLowBattery} isDark={isDark} />
+                <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
               </View>
             </View>
-            <Text style={styles.deviceImei}>IMEI: {item.imei}</Text>
+            <Text style={[styles.deviceImei, { color: theme.textSecondary }]}>IMEI: {item.imei}</Text>
             <View style={styles.statusRow}>
-              <Text style={[styles.statusLabel, isReporting ? styles.statusActive : styles.statusInactive]}>
-                {isReporting ? 'Reportando' : 'Sin reporte'}
+              <Text style={[styles.statusLabel, getStatusStyle()]}>
+                {getStatusLabel()}
               </Text>
               {lastUpdateDate && (
-                <Text style={styles.lastUpdateText}>
+                <Text style={[styles.lastUpdateText, { color: theme.textSecondary }]}>
                   · {formatTimeAgo(lastUpdateDate)}
                 </Text>
               )}
             </View>
             {lastPosition?.speed !== undefined && lastPosition.speed !== null && (
-              <Text style={styles.speedText}>
+              <Text style={[styles.speedText, { color: theme.textSecondary }]}>
                 Velocidad: {lastPosition.speed.toFixed(1)} km/h
               </Text>
             )}
@@ -241,26 +299,26 @@ export function DevicesScreen({ navigation }: any) {
   const renderTaggedObject = ({ item }: { item: any }) => {
     return (
       <TouchableOpacity
-        style={styles.taggedObjectCard}
+        style={[styles.taggedObjectCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}
         onPress={() => navigation.navigate('DeviceQR', { deviceId: item.id })}
       >
         <View style={styles.taggedObjectRow}>
-          <View style={styles.taggedObjectIcon}>
-            <Ionicons name="pricetag" size={24} color="#007AFF" />
+          <View style={[styles.taggedObjectIcon, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#E3F2FD' }]}>
+            <Ionicons name="pricetag" size={24} color={theme.primary.main} />
           </View>
           <View style={styles.deviceInfo}>
             <View style={styles.deviceHeader}>
-              <Text style={styles.deviceName}>{item.name || 'Objeto'}</Text>
-              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+              <Text style={[styles.deviceName, { color: theme.text }]}>{item.name || 'Objeto'}</Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
             </View>
             <View style={styles.qrStatusRow}>
-              <View style={[styles.qrBadge, item.qrEnabled ? styles.qrBadgeActive : styles.qrBadgeInactive]}>
+              <View style={[styles.qrBadge, item.qrEnabled ? (isDark ? { backgroundColor: 'rgba(52, 199, 89, 0.2)' } : styles.qrBadgeActive) : (isDark ? { backgroundColor: '#2C2C2E' } : styles.qrBadgeInactive)]}>
                 <Ionicons
                   name={item.qrEnabled ? 'qr-code' : 'qr-code-outline'}
                   size={12}
-                  color={item.qrEnabled ? '#34C759' : '#8E8E93'}
+                  color={item.qrEnabled ? '#34C759' : theme.textSecondary}
                 />
-                <Text style={[styles.qrBadgeText, { color: item.qrEnabled ? '#34C759' : '#8E8E93' }]}>
+                <Text style={[styles.qrBadgeText, { color: item.qrEnabled ? '#34C759' : theme.textSecondary }]}>
                   {item.qrEnabled ? 'QR activo' : 'QR inactivo'}
                 </Text>
               </View>
@@ -273,29 +331,29 @@ export function DevicesScreen({ navigation }: any) {
 
   if (loading && !refreshing) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
-            <Ionicons name="arrow-back" size={24} color="#262626" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Dispositivos</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Dispositivos</Text>
           <View style={styles.headerButton} />
         </View>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color={theme.primary.main} />
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Dispositivos</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Dispositivos</Text>
         <View style={styles.headerButton} />
       </View>
 
@@ -305,15 +363,15 @@ export function DevicesScreen({ navigation }: any) {
           <View style={styles.listContent}>
             {/* Low Battery Warning Banner */}
             {lowBatteryCount > 0 && (
-              <View style={styles.lowBatteryBanner}>
-                <View style={styles.lowBatteryBannerIcon}>
+              <View style={[styles.lowBatteryBanner, { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.15)' : '#FFF5F5' }]}>
+                <View style={[styles.lowBatteryBannerIcon, { backgroundColor: isDark ? 'rgba(255, 59, 48, 0.2)' : '#FFEBEB' }]}>
                   <Ionicons name="battery-dead" size={24} color="#FF3B30" />
                 </View>
                 <View style={styles.lowBatteryBannerContent}>
                   <Text style={styles.lowBatteryBannerTitle}>
                     {lowBatteryCount === 1 ? '1 dispositivo con batería baja' : `${lowBatteryCount} dispositivos con batería baja`}
                   </Text>
-                  <Text style={styles.lowBatteryBannerSubtitle}>
+                  <Text style={[styles.lowBatteryBannerSubtitle, { color: theme.textSecondary }]}>
                     {lowBatteryDevices.map((d: any) => d.name || `JX10-${d.imei?.slice(-4)}`).join(', ')}
                   </Text>
                 </View>
@@ -322,79 +380,83 @@ export function DevicesScreen({ navigation }: any) {
 
             {/* Found Chats Link */}
             <TouchableOpacity
-              style={styles.foundChatsCard}
+              style={[styles.foundChatsCard, { backgroundColor: theme.surface, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : 'transparent' }]}
               onPress={() => navigation.getParent()?.navigate('FoundChats')}
             >
-              <View style={styles.foundChatsIcon}>
+              <View style={[styles.foundChatsIcon, { backgroundColor: isDark ? 'rgba(255, 149, 0, 0.2)' : '#FFF3E0' }]}>
                 <Ionicons name="search" size={22} color="#FF9500" />
               </View>
               <View style={styles.foundChatsInfo}>
-                <Text style={styles.foundChatsTitle}>Objetos Encontrados</Text>
-                <Text style={styles.foundChatsSubtitle}>Chats con quienes encontraron tus objetos</Text>
+                <Text style={[styles.foundChatsTitle, { color: theme.text }]}>Objetos Encontrados</Text>
+                <Text style={[styles.foundChatsSubtitle, { color: theme.textSecondary }]}>Chats con quienes encontraron tus objetos</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
 
             {/* GPS Devices Section */}
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
                 <Ionicons name="hardware-chip" size={20} color="#34C759" />
-                <Text style={styles.sectionTitle}>Dispositivos GPS</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Dispositivos GPS</Text>
               </View>
               <TouchableOpacity
-                style={styles.addSectionButton}
+                style={[styles.addSectionButton, { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.25)' : '#E8F8ED' }]}
                 onPress={() => navigation.navigate('AddDevice')}
               >
-                <Ionicons name="add" size={20} color="#007AFF" />
+                <Ionicons name="add" size={20} color="#34C759" />
               </TouchableOpacity>
             </View>
 
             {gpsDevices.length === 0 ? (
-              <View style={styles.emptySectionCard}>
-                <Ionicons name="hardware-chip-outline" size={32} color="#C7C7CC" />
-                <Text style={styles.emptySectionText}>No hay dispositivos GPS</Text>
+              <View style={[styles.emptySectionCard, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                <Ionicons name="hardware-chip-outline" size={32} color={theme.textSecondary} />
+                <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>No hay dispositivos GPS</Text>
                 <TouchableOpacity
                   style={styles.addSectionLink}
                   onPress={() => navigation.navigate('AddDevice')}
                 >
-                  <Text style={styles.addSectionLinkText}>Agregar dispositivo</Text>
+                  <Text style={[styles.addSectionLinkText, { color: theme.primary.main }]}>Agregar dispositivo</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              gpsDevices.map((item: any) => (
-                <View key={item.id}>{renderGPSDevice({ item })}</View>
+              gpsDevices.map((item: any, index: number) => (
+                <FadeInView key={item.id} delay={index * 50} duration={350}>
+                  {renderGPSDevice({ item })}
+                </FadeInView>
               ))
             )}
 
             {/* Tags Section */}
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Ionicons name="pricetag" size={20} color="#007AFF" />
-                <Text style={styles.sectionTitle}>Tags</Text>
+                <Ionicons name="pricetag" size={20} color="#0A84FF" />
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Tags</Text>
               </View>
               <TouchableOpacity
-                style={styles.addSectionButton}
+                style={[styles.addSectionButton, { backgroundColor: isDark ? 'rgba(10, 132, 255, 0.25)' : '#E3F2FD' }]}
                 onPress={() => navigation.navigate('AddTaggedObject')}
               >
-                <Ionicons name="add" size={20} color="#007AFF" />
+                <Ionicons name="add" size={20} color="#0A84FF" />
               </TouchableOpacity>
             </View>
 
             {taggedObjects.length === 0 ? (
-              <View style={styles.emptySectionCard}>
-                <Ionicons name="pricetag-outline" size={32} color="#C7C7CC" />
-                <Text style={styles.emptySectionText}>No hay tags</Text>
-                <Text style={styles.emptySectionHint}>Crea codigos QR para tus objetos</Text>
+              <View style={[styles.emptySectionCard, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                <Ionicons name="pricetag-outline" size={32} color={theme.textSecondary} />
+                <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>No hay tags</Text>
+                <Text style={[styles.emptySectionHint, { color: isDark ? '#6A6A6E' : '#C7C7CC' }]}>Crea codigos QR para tus objetos</Text>
                 <TouchableOpacity
                   style={styles.addSectionLink}
                   onPress={() => navigation.navigate('AddTaggedObject')}
                 >
-                  <Text style={styles.addSectionLinkText}>Agregar objeto</Text>
+                  <Text style={[styles.addSectionLinkText, { color: theme.primary.main }]}>Agregar objeto</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              taggedObjects.map((item: any) => (
-                <View key={item.id}>{renderTaggedObject({ item })}</View>
+              taggedObjects.map((item: any, index: number) => (
+                <FadeInView key={item.id} delay={index * 50} duration={350}>
+                  {renderTaggedObject({ item })}
+                </FadeInView>
               ))
             )}
           </View>
@@ -524,6 +586,9 @@ const styles = StyleSheet.create({
   },
   statusActive: {
     color: '#34C759',
+  },
+  statusConnected: {
+    color: '#FF9500',
   },
   statusInactive: {
     color: '#FF3B30',

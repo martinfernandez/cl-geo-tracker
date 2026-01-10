@@ -24,6 +24,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Svg, { Circle, Path, G } from 'react-native-svg';
 import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
+import { FadeInView } from '../components/FadeInView';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -63,9 +64,13 @@ const formatRelativeTime = (dateString: string): string => {
 };
 
 // Animated empty state illustration
-const AnimatedEmptyIllustration = () => {
+const AnimatedEmptyIllustration = ({ isDark }: { isDark: boolean }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+
+  // Theme-aware colors
+  const outerCircleFill = isDark ? '#2C2C2E' : '#F0F4FF';
+  const dashedCircleStroke = isDark ? '#3A3A3C' : '#E0E7FF';
 
   useEffect(() => {
     Animated.loop(
@@ -117,10 +122,10 @@ const AnimatedEmptyIllustration = () => {
         ]}
       >
         <Svg width={120} height={120} viewBox="0 0 120 120">
-          <Circle cx="60" cy="60" r="55" fill="#F0F4FF" />
-          <Circle cx="60" cy="60" r="45" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
-          <Circle cx="60" cy="60" r="35" fill="none" stroke="#E0E7FF" strokeWidth="1" strokeDasharray="4 4" />
-          <Circle cx="60" cy="60" r="25" fill="none" stroke="#E0E7FF" strokeWidth="1" />
+          <Circle cx="60" cy="60" r="55" fill={outerCircleFill} />
+          <Circle cx="60" cy="60" r="45" fill="none" stroke={dashedCircleStroke} strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="35" fill="none" stroke={dashedCircleStroke} strokeWidth="1" strokeDasharray="4 4" />
+          <Circle cx="60" cy="60" r="25" fill="none" stroke={dashedCircleStroke} strokeWidth="1" />
           <G>
             <Path
               d="M60 30 C45 30 35 42 35 55 C35 75 60 90 60 90 C60 90 85 75 85 55 C85 42 75 30 60 30 Z"
@@ -281,12 +286,13 @@ export default function EventsScreen({ navigation, route }: Props) {
   const activeCount = events.filter(e => e.status === 'IN_PROGRESS').length;
   const closedCount = events.filter(e => e.status === 'CLOSED').length;
 
-  const renderEventCard = ({ item }: { item: EventWithCounts }) => {
+  const renderEventCard = ({ item, index }: { item: EventWithCounts; index: number }) => {
     const config = EVENT_TYPE_CONFIG[item.type] || EVENT_TYPE_CONFIG.GENERAL;
     const isActive = item.status === 'IN_PROGRESS';
 
     return (
-      <View style={[styles.card, { backgroundColor: theme.bg.primary, borderColor: theme.glass.border }]}>
+      <FadeInView delay={index * 50} duration={350}>
+      <View style={[styles.card, { backgroundColor: theme.bg, borderColor: theme.glass.border }]}>
         <TouchableOpacity
           onPress={() => navigation.navigate('EventDetail', { eventId: item.id })}
           activeOpacity={0.85}
@@ -328,8 +334,8 @@ export default function EventsScreen({ navigation, route }: Props) {
               {/* Time on the right if no image */}
               {!item.imageUrl && (
                 <View style={styles.timeContainer}>
-                  <Ionicons name="time-outline" size={12} color={theme.text.tertiary} />
-                  <Text style={[styles.timeText, { color: theme.text.tertiary }]}>
+                  <Ionicons name="time-outline" size={12} color={theme.textTertiary} />
+                  <Text style={[styles.timeText, { color: theme.textTertiary }]}>
                     {formatRelativeTime(item.createdAt)}
                   </Text>
                 </View>
@@ -337,14 +343,14 @@ export default function EventsScreen({ navigation, route }: Props) {
             </View>
 
             {/* Description */}
-            <Text style={[styles.description, { color: theme.text.primary }]} numberOfLines={2}>
+            <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
               {item.description}
             </Text>
 
             {/* Device info */}
             <View style={styles.deviceRow}>
-              <Ionicons name="phone-portrait-outline" size={14} color={theme.text.tertiary} />
-              <Text style={[styles.deviceText, { color: theme.text.tertiary }]}>
+              <Ionicons name="phone-portrait-outline" size={14} color={theme.textTertiary} />
+              <Text style={[styles.deviceText, { color: theme.textTertiary }]}>
                 {item.device?.name || 'Sin dispositivo'}
               </Text>
             </View>
@@ -361,9 +367,9 @@ export default function EventsScreen({ navigation, route }: Props) {
               <Ionicons
                 name={item.userReacted ? 'heart' : 'heart-outline'}
                 size={22}
-                color={item.userReacted ? theme.error.main : theme.text.tertiary}
+                color={item.userReacted ? theme.error.main : theme.textTertiary}
               />
-              <Text style={[styles.interactionCount, { color: theme.text.tertiary }, item.userReacted && { color: theme.error.main }]}>
+              <Text style={[styles.interactionCount, { color: theme.textTertiary }, item.userReacted && { color: theme.error.main }]}>
                 {(item.reactionCount || 0).toString()}
               </Text>
             </TouchableOpacity>
@@ -372,8 +378,8 @@ export default function EventsScreen({ navigation, route }: Props) {
               style={styles.interactionButton}
               onPress={() => handleCommentPress(item.id)}
             >
-              <Ionicons name="chatbubble-outline" size={22} color={theme.text.tertiary} />
-              <Text style={[styles.interactionCount, { color: theme.text.tertiary }]}>
+              <Ionicons name="chatbubble-outline" size={22} color={theme.textTertiary} />
+              <Text style={[styles.interactionCount, { color: theme.textTertiary }]}>
                 {(item.commentCount || 0).toString()}
               </Text>
             </TouchableOpacity>
@@ -382,7 +388,7 @@ export default function EventsScreen({ navigation, route }: Props) {
               style={styles.interactionButton}
               onPress={() => handleShareEvent(item)}
             >
-              <Ionicons name="paper-plane-outline" size={22} color={theme.text.tertiary} />
+              <Ionicons name="paper-plane-outline" size={22} color={theme.textTertiary} />
             </TouchableOpacity>
           </View>
 
@@ -399,7 +405,7 @@ export default function EventsScreen({ navigation, route }: Props) {
               style={[styles.actionButton, { backgroundColor: theme.glass.bg }]}
               onPress={() => navigation.navigate('EditEvent', { eventId: item.id })}
             >
-              <Ionicons name="create-outline" size={18} color={theme.text.secondary} />
+              <Ionicons name="create-outline" size={18} color={theme.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -422,61 +428,62 @@ export default function EventsScreen({ navigation, route }: Props) {
           </View>
         </View>
       </View>
+      </FadeInView>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.secondary }]}>
+    <View style={[styles.container, { backgroundColor: theme.bgSecondary }]}>
       {/* SVG Background Pattern with Objects */}
       <ObjectsPatternBackground />
 
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.bg.primary, borderBottomColor: theme.glass.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.text.primary }]}>Mis Eventos</Text>
-        <Text style={[styles.headerSubtitle, { color: theme.text.secondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.bg, borderBottomColor: theme.glass.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Mis Eventos</Text>
+        <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
           {events.length} {events.length === 1 ? 'evento' : 'eventos'} registrados
         </Text>
       </View>
 
       {/* Filter Tabs */}
-      <View style={[styles.filterContainer, { backgroundColor: theme.bg.primary }]}>
+      <View style={[styles.filterContainer, { backgroundColor: theme.bg }]}>
         <TouchableOpacity
-          style={[styles.filterTab, { backgroundColor: theme.glass.bg }, filter === 'all' && { backgroundColor: theme.primary.subtle }]}
+          style={[styles.filterTab, { backgroundColor: isDark ? 'rgba(58, 58, 60, 0.8)' : theme.glass.bg }, filter === 'all' && { backgroundColor: theme.primary.subtle }]}
           onPress={() => setFilter('all')}
         >
-          <Text style={[styles.filterTabText, { color: theme.text.secondary }, filter === 'all' && { color: theme.primary.main }]}>
+          <Text style={[styles.filterTabText, { color: theme.textSecondary }, filter === 'all' && { color: theme.primary.main }]}>
             Todos
           </Text>
-          <View style={[styles.filterBadge, { backgroundColor: theme.glass.borderStrong }, filter === 'all' && { backgroundColor: theme.primary.main }]}>
-            <Text style={[styles.filterBadgeText, { color: theme.text.secondary }, filter === 'all' && { color: '#fff' }]}>
+          <View style={[styles.filterBadge, { backgroundColor: isDark ? '#48484A' : theme.glass.borderStrong }, filter === 'all' && { backgroundColor: theme.primary.main }]}>
+            <Text style={[styles.filterBadgeText, { color: isDark ? '#EBEBF5' : theme.textSecondary }, filter === 'all' && { color: '#fff' }]}>
               {events.length}
             </Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterTab, { backgroundColor: theme.glass.bg }, filter === 'active' && { backgroundColor: theme.primary.subtle }]}
+          style={[styles.filterTab, { backgroundColor: isDark ? 'rgba(58, 58, 60, 0.8)' : theme.glass.bg }, filter === 'active' && { backgroundColor: theme.primary.subtle }]}
           onPress={() => setFilter('active')}
         >
-          <Text style={[styles.filterTabText, { color: theme.text.secondary }, filter === 'active' && { color: theme.primary.main }]}>
+          <Text style={[styles.filterTabText, { color: theme.textSecondary }, filter === 'active' && { color: theme.primary.main }]}>
             Activos
           </Text>
-          <View style={[styles.filterBadge, { backgroundColor: theme.glass.borderStrong }, filter === 'active' && { backgroundColor: theme.primary.main }]}>
-            <Text style={[styles.filterBadgeText, { color: theme.text.secondary }, filter === 'active' && { color: '#fff' }]}>
+          <View style={[styles.filterBadge, { backgroundColor: isDark ? '#48484A' : theme.glass.borderStrong }, filter === 'active' && { backgroundColor: theme.primary.main }]}>
+            <Text style={[styles.filterBadgeText, { color: isDark ? '#EBEBF5' : theme.textSecondary }, filter === 'active' && { color: '#fff' }]}>
               {activeCount}
             </Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterTab, { backgroundColor: theme.glass.bg }, filter === 'closed' && { backgroundColor: theme.primary.subtle }]}
+          style={[styles.filterTab, { backgroundColor: isDark ? 'rgba(58, 58, 60, 0.8)' : theme.glass.bg }, filter === 'closed' && { backgroundColor: theme.primary.subtle }]}
           onPress={() => setFilter('closed')}
         >
-          <Text style={[styles.filterTabText, { color: theme.text.secondary }, filter === 'closed' && { color: theme.primary.main }]}>
+          <Text style={[styles.filterTabText, { color: theme.textSecondary }, filter === 'closed' && { color: theme.primary.main }]}>
             Cerrados
           </Text>
-          <View style={[styles.filterBadge, { backgroundColor: theme.glass.borderStrong }, filter === 'closed' && { backgroundColor: theme.primary.main }]}>
-            <Text style={[styles.filterBadgeText, { color: theme.text.secondary }, filter === 'closed' && { color: '#fff' }]}>
+          <View style={[styles.filterBadge, { backgroundColor: isDark ? '#48484A' : theme.glass.borderStrong }, filter === 'closed' && { backgroundColor: theme.primary.main }]}>
+            <Text style={[styles.filterBadgeText, { color: isDark ? '#EBEBF5' : theme.textSecondary }, filter === 'closed' && { color: '#fff' }]}>
               {closedCount}
             </Text>
           </View>
@@ -499,11 +506,11 @@ export default function EventsScreen({ navigation, route }: Props) {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <AnimatedEmptyIllustration />
-            <Text style={[styles.emptyTitle, { color: theme.text.primary }]}>
+            <AnimatedEmptyIllustration isDark={isDark} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
               {filter === 'all' ? 'Sin eventos' : filter === 'active' ? 'Sin eventos activos' : 'Sin eventos cerrados'}
             </Text>
-            <Text style={[styles.emptyText, { color: theme.text.secondary }]}>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
               {filter === 'all'
                 ? 'Crea tu primer evento tocando el boton + en la barra inferior'
                 : 'No hay eventos en esta categoria'}
@@ -530,18 +537,18 @@ export default function EventsScreen({ navigation, route }: Props) {
           activeOpacity={1}
           onPress={cancelDeleteEvent}
         >
-          <View style={[styles.modalContent, { backgroundColor: theme.bg.primary }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.bg }]}>
             <View style={styles.modalIconContainer}>
               <View style={[styles.modalIconCircle, { backgroundColor: colors.error.subtle }]}>
                 <Ionicons name="trash-outline" size={32} color={colors.error.main} />
               </View>
             </View>
 
-            <Text style={[styles.modalTitle, { color: theme.text.primary }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
               Eliminar evento
             </Text>
 
-            <Text style={[styles.modalMessage, { color: theme.text.secondary }]}>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>
               {eventToDelete ? (
                 `¿Estas seguro de que queres eliminar este evento?\n\n"${eventToDelete.description.slice(0, 50)}${eventToDelete.description.length > 50 ? '...' : ''}"`
               ) : ''}
@@ -553,7 +560,7 @@ export default function EventsScreen({ navigation, route }: Props) {
                 onPress={cancelDeleteEvent}
                 disabled={isDeleting}
               >
-                <Text style={[styles.modalButtonText, { color: theme.text.secondary }]}>
+                <Text style={[styles.modalButtonText, { color: theme.textSecondary }]}>
                   Cancelar
                 </Text>
               </TouchableOpacity>
@@ -626,13 +633,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
-    padding: 12,
+    paddingVertical: 12,
     paddingBottom: 100,
   },
   card: {
-    borderRadius: radius.xl,
     marginBottom: 14,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -677,8 +684,9 @@ const styles = StyleSheet.create({
   cardHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: 8,
-    flex: 1,
+    flexShrink: 1,
     flexWrap: 'wrap',
   },
   typeBadge: {

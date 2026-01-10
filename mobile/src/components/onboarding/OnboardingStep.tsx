@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.2;
@@ -49,6 +50,10 @@ export function OnboardingStep({
   children,
 }: OnboardingStepProps) {
   const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
+
+  // Track if component is mounted to prevent crashes
+  const isMountedRef = useRef(true);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -57,11 +62,19 @@ export function OnboardingStep({
   const iconRotate = useRef(new Animated.Value(0)).current;
   const translateX = useRef(new Animated.Value(0)).current;
 
-  // Gradient colors based on icon color
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Gradient colors based on icon color and theme
   const defaultGradient = [
     `${iconColor}15`,
     `${iconColor}05`,
-    '#ffffff',
+    theme.bg,
   ];
 
   useEffect(() => {
@@ -143,8 +156,11 @@ export function OnboardingStep({
               duration: 150,
               useNativeDriver: true,
             }).start(() => {
-              translateX.setValue(0);
-              onNextRef.current();
+              // Only update if component is still mounted
+              if (isMountedRef.current) {
+                translateX.setValue(0);
+                onNextRef.current();
+              }
             });
           } else if ((gestureState.dx > threshold || velocity > 0.5) && currentStepRef.current > 0 && onPrevRef.current) {
             // Swipe right - go back
@@ -153,8 +169,11 @@ export function OnboardingStep({
               duration: 150,
               useNativeDriver: true,
             }).start(() => {
-              translateX.setValue(0);
-              onPrevRef.current!();
+              // Only update if component is still mounted
+              if (isMountedRef.current) {
+                translateX.setValue(0);
+                onPrevRef.current!();
+              }
             });
           } else {
             // Snap back
@@ -168,12 +187,14 @@ export function OnboardingStep({
         },
         onPanResponderTerminate: () => {
           // Snap back if gesture is terminated
-          Animated.spring(translateX, {
-            toValue: 0,
-            tension: 120,
-            friction: 8,
-            useNativeDriver: true,
-          }).start();
+          if (isMountedRef.current) {
+            Animated.spring(translateX, {
+              toValue: 0,
+              tension: 120,
+              friction: 8,
+              useNativeDriver: true,
+            }).start();
+          }
         },
       }),
     [translateX]
@@ -185,7 +206,7 @@ export function OnboardingStep({
   });
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
       {/* Background gradient */}
       <LinearGradient
         colors={gradientColors || defaultGradient}
@@ -212,7 +233,7 @@ export function OnboardingStep({
                 style={[
                   styles.progressBar,
                   index <= currentStep && styles.progressBarActive,
-                  { backgroundColor: index <= currentStep ? iconColor : '#E5E5EA' },
+                  { backgroundColor: index <= currentStep ? iconColor : (isDark ? '#3A3A3C' : '#E5E5EA') },
                 ]}
               />
             </View>
@@ -260,8 +281,8 @@ export function OnboardingStep({
                 <Text style={[styles.subtitle, { color: iconColor }]}>{subtitle}</Text>
               </View>
             )}
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.description}>{description}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+            <Text style={[styles.description, { color: theme.textSecondary }]}>{description}</Text>
           </Animated.View>
 
           {/* Custom content */}
@@ -279,8 +300,8 @@ export function OnboardingStep({
 
         {/* Swipe hint */}
         <View style={styles.swipeHint}>
-          <Ionicons name="swap-horizontal" size={20} color="#C7C7CC" />
-          <Text style={styles.swipeHintText}>Desliza para navegar</Text>
+          <Ionicons name="swap-horizontal" size={20} color={theme.textTertiary} />
+          <Text style={[styles.swipeHintText, { color: theme.textTertiary }]}>Desliza para navegar</Text>
         </View>
       </Animated.View>
 
@@ -318,6 +339,7 @@ export function OnboardingStep({
               key={index}
               style={[
                 styles.dot,
+                { backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA' },
                 index === currentStep && [styles.dotActive, { backgroundColor: iconColor }],
               ]}
             />
@@ -330,7 +352,7 @@ export function OnboardingStep({
           onPress={onSkip}
           hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
         >
-          <Text style={styles.skipText}>Omitir tutorial</Text>
+          <Text style={[styles.skipText, { color: theme.textSecondary }]}>Omitir tutorial</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>

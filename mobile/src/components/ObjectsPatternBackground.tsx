@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Svg, { G, Path, Circle } from 'react-native-svg';
+import { useTheme } from '../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -9,7 +10,9 @@ interface Props {
 }
 
 export const ObjectsPatternBackground = React.memo(({ height = SCREEN_HEIGHT }: Props) => {
-  const ICON_COLOR = '#D1D5DB';
+  const { isDark } = useTheme();
+  // More subtle colors - lighter in light mode, darker in dark mode
+  const ICON_COLOR = isDark ? '#2C2C2E' : '#E8E8ED';
   const ICON_SIZE = 20;
   const PATTERN_SIZE = 55;
 

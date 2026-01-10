@@ -5,12 +5,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  Pressable,
   ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface FilterOptions {
   status?: 'IN_PROGRESS' | 'CLOSED' | 'ALL';
-  type?: 'THEFT' | 'LOST' | 'ACCIDENT' | 'FIRE' | 'ALL';
+  type?: 'THEFT' | 'LOST' | 'ACCIDENT' | 'FIRE' | 'GENERAL' | 'ALL';
   sortBy: 'createdAt' | 'type';
   sortOrder: 'asc' | 'desc';
 }
@@ -23,27 +26,23 @@ interface Props {
 }
 
 const EVENT_STATUSES = [
-  { label: 'Todos', value: 'ALL' },
-  { label: 'En Progreso', value: 'IN_PROGRESS' },
-  { label: 'Cerrados', value: 'CLOSED' },
+  { label: 'Todos', value: 'ALL', icon: 'apps-outline' as const },
+  { label: 'En Progreso', value: 'IN_PROGRESS', icon: 'radio-button-on' as const },
+  { label: 'Cerrados', value: 'CLOSED', icon: 'checkmark-circle-outline' as const },
 ];
 
 const EVENT_TYPES = [
-  { label: 'Todos', value: 'ALL' },
-  { label: 'Robo', value: 'THEFT' },
-  { label: 'Extravío', value: 'LOST' },
-  { label: 'Accidente', value: 'ACCIDENT' },
-  { label: 'Incendio', value: 'FIRE' },
+  { label: 'Todos', value: 'ALL', icon: 'apps-outline' as const },
+  { label: 'Robo', value: 'THEFT', icon: 'warning-outline' as const },
+  { label: 'Extravío', value: 'LOST', icon: 'search-outline' as const },
+  { label: 'Accidente', value: 'ACCIDENT', icon: 'car-outline' as const },
+  { label: 'Incendio', value: 'FIRE', icon: 'flame-outline' as const },
+  { label: 'General', value: 'GENERAL', icon: 'alert-circle-outline' as const },
 ];
 
 const SORT_OPTIONS = [
-  { label: 'Fecha de creación', value: 'createdAt' },
-  { label: 'Tipo', value: 'type' },
-];
-
-const SORT_ORDERS = [
-  { label: 'Más recientes primero', value: 'desc' },
-  { label: 'Más antiguos primero', value: 'asc' },
+  { label: 'Más recientes', value: 'desc', icon: 'arrow-down-outline' as const },
+  { label: 'Más antiguos', value: 'asc', icon: 'arrow-up-outline' as const },
 ];
 
 export default function EventFilterModal({
@@ -52,6 +51,7 @@ export default function EventFilterModal({
   onApply,
   initialFilters,
 }: Props) {
+  const { theme, isDark } = useTheme();
   const [filters, setFilters] = useState<FilterOptions>({
     status: 'ALL',
     type: 'ALL',
@@ -81,6 +81,12 @@ export default function EventFilterModal({
     setFilters(defaultFilters);
   };
 
+  const hasActiveFilters = filters.status !== 'ALL' || filters.type !== 'ALL' || filters.sortOrder !== 'desc';
+
+  const chipBg = isDark ? '#2C2C2E' : '#F2F2F7';
+  const chipActiveBg = theme.primary.main;
+  const chipBorder = isDark ? '#3A3A3C' : '#E5E5EA';
+
   return (
     <Modal
       visible={visible}
@@ -88,131 +94,166 @@ export default function EventFilterModal({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.container}>
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <Pressable
+          style={[styles.container, { backgroundColor: theme.surface }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {/* Handle bar */}
+          <View style={styles.handleContainer}>
+            <View style={[styles.handle, { backgroundColor: isDark ? '#5C5C5E' : '#C7C7CC' }]} />
+          </View>
+
+          {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Filtros y Ordenamiento</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeButton}>✕</Text>
+            <TouchableOpacity
+              onPress={handleReset}
+              style={styles.headerButton}
+              disabled={!hasActiveFilters}
+            >
+              <Text style={[
+                styles.headerButtonText,
+                { color: hasActiveFilters ? theme.primary.main : theme.textSecondary }
+              ]}>
+                Limpiar
+              </Text>
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Filtros</Text>
+            <TouchableOpacity onPress={handleApply} style={styles.headerButton}>
+              <Text style={[styles.headerButtonText, { color: theme.primary.main, fontWeight: '600' }]}>
+                Aplicar
+              </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content}>
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
             {/* Status Filter */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Estado</Text>
-              <View style={styles.optionsRow}>
-                {EVENT_STATUSES.map((status) => (
-                  <TouchableOpacity
-                    key={status.value}
-                    style={[
-                      styles.optionButton,
-                      filters.status === status.value && styles.optionButtonActive,
-                    ]}
-                    onPress={() => setFilters({ ...filters, status: status.value as any })}
-                  >
-                    <Text
+              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ESTADO</Text>
+              <View style={styles.chipsRow}>
+                {EVENT_STATUSES.map((status) => {
+                  const isActive = filters.status === status.value;
+                  return (
+                    <TouchableOpacity
+                      key={status.value}
                       style={[
-                        styles.optionText,
-                        filters.status === status.value && styles.optionTextActive,
+                        styles.chip,
+                        {
+                          backgroundColor: isActive ? chipActiveBg : chipBg,
+                          borderColor: isActive ? chipActiveBg : chipBorder,
+                        },
                       ]}
+                      onPress={() => setFilters({ ...filters, status: status.value as any })}
+                      activeOpacity={0.7}
                     >
-                      {status.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Ionicons
+                        name={status.icon}
+                        size={16}
+                        color={isActive ? '#FFFFFF' : theme.textSecondary}
+                        style={styles.chipIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: isActive ? '#FFFFFF' : theme.text },
+                        ]}
+                      >
+                        {status.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
             {/* Type Filter */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Tipo de Evento</Text>
-              <View style={styles.optionsRow}>
-                {EVENT_TYPES.map((type) => (
-                  <TouchableOpacity
-                    key={type.value}
-                    style={[
-                      styles.optionButton,
-                      filters.type === type.value && styles.optionButtonActive,
-                    ]}
-                    onPress={() => setFilters({ ...filters, type: type.value as any })}
-                  >
-                    <Text
+              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>TIPO DE EVENTO</Text>
+              <View style={styles.chipsRow}>
+                {EVENT_TYPES.map((type) => {
+                  const isActive = filters.type === type.value;
+                  return (
+                    <TouchableOpacity
+                      key={type.value}
                       style={[
-                        styles.optionText,
-                        filters.type === type.value && styles.optionTextActive,
+                        styles.chip,
+                        {
+                          backgroundColor: isActive ? chipActiveBg : chipBg,
+                          borderColor: isActive ? chipActiveBg : chipBorder,
+                        },
                       ]}
+                      onPress={() => setFilters({ ...filters, type: type.value as any })}
+                      activeOpacity={0.7}
                     >
-                      {type.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Sort By */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Ordenar por</Text>
-              <View style={styles.optionsColumn}>
-                {SORT_OPTIONS.map((option) => (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[
-                      styles.optionButtonFull,
-                      filters.sortBy === option.value && styles.optionButtonActive,
-                    ]}
-                    onPress={() => setFilters({ ...filters, sortBy: option.value as any })}
-                  >
-                    <Text
-                      style={[
-                        styles.optionText,
-                        filters.sortBy === option.value && styles.optionTextActive,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Ionicons
+                        name={type.icon}
+                        size={16}
+                        color={isActive ? '#FFFFFF' : theme.textSecondary}
+                        style={styles.chipIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: isActive ? '#FFFFFF' : theme.text },
+                        ]}
+                      >
+                        {type.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
             {/* Sort Order */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Orden</Text>
-              <View style={styles.optionsColumn}>
-                {SORT_ORDERS.map((order) => (
-                  <TouchableOpacity
-                    key={order.value}
-                    style={[
-                      styles.optionButtonFull,
-                      filters.sortOrder === order.value && styles.optionButtonActive,
-                    ]}
-                    onPress={() => setFilters({ ...filters, sortOrder: order.value as any })}
-                  >
-                    <Text
+              <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ORDENAR POR FECHA</Text>
+              <View style={styles.chipsRow}>
+                {SORT_OPTIONS.map((order) => {
+                  const isActive = filters.sortOrder === order.value;
+                  return (
+                    <TouchableOpacity
+                      key={order.value}
                       style={[
-                        styles.optionText,
-                        filters.sortOrder === order.value && styles.optionTextActive,
+                        styles.chip,
+                        styles.chipWide,
+                        {
+                          backgroundColor: isActive ? chipActiveBg : chipBg,
+                          borderColor: isActive ? chipActiveBg : chipBorder,
+                        },
                       ]}
+                      onPress={() => setFilters({ ...filters, sortOrder: order.value as any })}
+                      activeOpacity={0.7}
                     >
-                      {order.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Ionicons
+                        name={order.icon}
+                        size={16}
+                        color={isActive ? '#FFFFFF' : theme.textSecondary}
+                        style={styles.chipIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: isActive ? '#FFFFFF' : theme.text },
+                        ]}
+                      >
+                        {order.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
-          </ScrollView>
 
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-              <Text style={styles.resetButtonText}>Restablecer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.applyButton} onPress={handleApply}>
-              <Text style={styles.applyButtonText}>Aplicar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+            {/* Bottom spacing for safe area */}
+            <View style={{ height: 20 }} />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -224,106 +265,70 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+  },
+  handleContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  handle: {
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  headerButton: {
+    minWidth: 60,
+  },
+  headerButtonText: {
+    fontSize: 16,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  closeButton: {
-    fontSize: 24,
-    color: '#666',
+    fontSize: 17,
+    fontWeight: '600',
   },
   content: {
-    padding: 20,
+    paddingHorizontal: 16,
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#333',
+    letterSpacing: 0.5,
     marginBottom: 12,
   },
-  optionsRow: {
+  chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  optionsColumn: {
-    gap: 8,
-  },
-  optionButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  optionButtonFull: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  optionButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  optionText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  optionTextActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  footer: {
+  chip: {
     flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  resetButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 8,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
   },
-  resetButtonText: {
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '600',
-  },
-  applyButton: {
+  chipWide: {
     flex: 1,
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
+    justifyContent: 'center',
   },
-  applyButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
+  chipIcon: {
+    marginRight: 6,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

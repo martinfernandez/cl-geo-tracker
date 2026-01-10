@@ -457,19 +457,42 @@ export function useMapState({ navigation, route }: UseMapStateOptions) {
 
   const displayEvents = useMemo(() => {
     if (activeGroup) {
-      return groupEvents;
+      // In group mode, show group events BUT also include urgent events with active tracking
+      const urgentTrackedEvents = pinnedEvents.filter(
+        (e: any) => e.isUrgent && e.realTimeTracking && e.status === 'IN_PROGRESS'
+      );
+      // Merge without duplicates
+      const combined = [...groupEvents];
+      urgentTrackedEvents.forEach((ue: any) => {
+        if (!combined.some((e: any) => e.id === ue.id)) {
+          combined.push(ue);
+        }
+      });
+      return combined;
     }
     return allVisibleEvents;
-  }, [activeGroup, groupEvents, allVisibleEvents]);
+  }, [activeGroup, groupEvents, allVisibleEvents, pinnedEvents]);
 
   const trackedEventIds = useMemo(() => {
-    if (activeGroup) return '';
-    return allVisibleEvents
-      .filter((event: any) => event.realTimeTracking && event.status === 'IN_PROGRESS')
-      .map((event: any) => event.id)
-      .sort()
-      .join(',');
-  }, [allVisibleEvents, activeGroup]);
+    // Get events with real-time tracking that are in progress
+    let eventsToTrack = allVisibleEvents.filter(
+      (event: any) => event.realTimeTracking && event.status === 'IN_PROGRESS'
+    );
+
+    // In group mode, also include urgent tracked events from pinnedEvents
+    if (activeGroup) {
+      const urgentTrackedEvents = pinnedEvents.filter(
+        (e: any) => e.isUrgent && e.realTimeTracking && e.status === 'IN_PROGRESS'
+      );
+      urgentTrackedEvents.forEach((ue: any) => {
+        if (!eventsToTrack.some((e: any) => e.id === ue.id)) {
+          eventsToTrack.push(ue);
+        }
+      });
+    }
+
+    return eventsToTrack.map((event: any) => event.id).sort().join(',');
+  }, [allVisibleEvents, activeGroup, pinnedEvents]);
 
   const devicesWithPosition = useMemo(() => {
     return devices.filter((device: any) => {
@@ -572,8 +595,10 @@ export function useMapState({ navigation, route }: UseMapStateOptions) {
     // Only act on actual changes
     if (isInGroupMode && !wasInGroupMode) {
       // ENTERING GROUP MODE
-      setTrackedEventPositions({});
-      setPinnedEvents([]);
+      // Keep urgent tracked events in pinnedEvents, clear non-urgent ones
+      setPinnedEvents((prev) =>
+        prev.filter((e: any) => e.isUrgent && e.realTimeTracking && e.status === 'IN_PROGRESS')
+      );
       setEvents([]);
       setFeedMinimized(true);
       loadGroupData();
@@ -693,11 +718,28 @@ export function useMapState({ navigation, route }: UseMapStateOptions) {
 
   // Load tracked event positions
   useEffect(() => {
-    if (trackedEventIds && !activeGroup) {
-      loadTrackedEventPositions(allVisibleEvents);
+    if (trackedEventIds) {
+      // Build the list of events to track positions for
+      let eventsForTracking = allVisibleEvents.filter(
+        (e: any) => e.realTimeTracking && e.status === 'IN_PROGRESS'
+      );
+
+      // In group mode, also include urgent tracked events from pinnedEvents
+      if (activeGroup) {
+        const urgentTrackedEvents = pinnedEvents.filter(
+          (e: any) => e.isUrgent && e.realTimeTracking && e.status === 'IN_PROGRESS'
+        );
+        urgentTrackedEvents.forEach((ue: any) => {
+          if (!eventsForTracking.some((e: any) => e.id === ue.id)) {
+            eventsForTracking.push(ue);
+          }
+        });
+      }
+
+      loadTrackedEventPositions(eventsForTracking);
 
       trackedPositionsInterval.current = setInterval(() => {
-        loadTrackedEventPositions(allVisibleEvents);
+        loadTrackedEventPositions(eventsForTracking);
       }, DATA_REFRESH_INTERVAL);
 
       return () => {
@@ -708,7 +750,7 @@ export function useMapState({ navigation, route }: UseMapStateOptions) {
     } else {
       setTrackedEventPositions({});
     }
-  }, [trackedEventIds, activeGroup, allVisibleEvents, loadTrackedEventPositions]);
+  }, [trackedEventIds, activeGroup, allVisibleEvents, pinnedEvents, loadTrackedEventPositions]);
 
   return {
     // Refs

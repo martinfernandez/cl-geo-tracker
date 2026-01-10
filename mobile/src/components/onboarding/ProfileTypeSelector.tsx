@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserProfileType } from '../../contexts/OnboardingContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -80,24 +81,25 @@ interface ProfileTypeSelectorProps {
 
 export function ProfileTypeSelector({ onSelect, onSkip }: ProfileTypeSelectorProps) {
   const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
       {/* Skip button */}
       <TouchableOpacity
         style={[styles.skipButton, { top: insets.top + 16 }]}
         onPress={onSkip}
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
-        <Text style={styles.skipText}>Omitir</Text>
-        <Ionicons name="chevron-forward" size={16} color="#8E8E93" />
+        <Text style={[styles.skipText, { color: theme.textSecondary }]}>Omitir</Text>
+        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
       </TouchableOpacity>
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.welcomeText}>Bienvenido</Text>
-        <Text style={styles.title}>¿Cómo usarás la app?</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.welcomeText, { color: theme.primary.main }]}>Bienvenido</Text>
+        <Text style={[styles.title, { color: theme.text }]}>¿Cómo usarás la app?</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           Personalizaremos tu experiencia según tus necesidades
         </Text>
       </View>
@@ -111,33 +113,40 @@ export function ProfileTypeSelector({ onSelect, onSkip }: ProfileTypeSelectorPro
         {profileOptions.map((option) => (
           <TouchableOpacity
             key={option.type}
-            style={styles.optionCard}
+            style={[
+              styles.optionCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: isDark ? '#3A3A3C' : 'transparent',
+                borderWidth: isDark ? 1 : 0,
+              },
+            ]}
             onPress={() => onSelect(option.type)}
             activeOpacity={0.7}
           >
-            <View style={[styles.iconContainer, { backgroundColor: `${option.color}15` }]}>
+            <View style={[styles.iconContainer, { backgroundColor: `${option.color}${isDark ? '30' : '15'}` }]}>
               <Ionicons name={option.icon} size={28} color={option.color} />
             </View>
             <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>{option.title}</Text>
-              <Text style={styles.optionDescription}>{option.description}</Text>
+              <Text style={[styles.optionTitle, { color: theme.text }]}>{option.title}</Text>
+              <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>{option.description}</Text>
               <View style={styles.featuresContainer}>
                 {option.features.map((feature, index) => (
                   <View key={index} style={styles.featureRow}>
                     <Ionicons name="checkmark" size={14} color={option.color} />
-                    <Text style={styles.featureText}>{feature}</Text>
+                    <Text style={[styles.featureText, { color: theme.textSecondary }]}>{feature}</Text>
                   </View>
                 ))}
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
         ))}
       </ScrollView>
 
       {/* Footer */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.footerText}>
+        <Text style={[styles.footerText, { color: theme.textSecondary }]}>
           Podrás cambiar esto en cualquier momento desde Configuración
         </Text>
       </View>
@@ -148,7 +157,6 @@ export function ProfileTypeSelector({ onSelect, onSkip }: ProfileTypeSelectorPro
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
   },
   skipButton: {
     position: 'absolute',
@@ -160,7 +168,6 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: 15,
-    color: '#8E8E93',
     marginRight: 2,
   },
   header: {
@@ -170,19 +177,16 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     fontSize: 15,
-    color: '#5856D6',
     fontWeight: '600',
     marginBottom: 8,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1C1C1E',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: '#6B6B6B',
     lineHeight: 22,
   },
   scrollView: {
@@ -195,7 +199,6 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -219,12 +222,10 @@ const styles = StyleSheet.create({
   optionTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#1C1C1E',
     marginBottom: 2,
   },
   optionDescription: {
     fontSize: 14,
-    color: '#8E8E93',
     marginBottom: 8,
   },
   featuresContainer: {
@@ -237,7 +238,6 @@ const styles = StyleSheet.create({
   },
   featureText: {
     fontSize: 12,
-    color: '#6B6B6B',
   },
   footer: {
     paddingHorizontal: 24,
@@ -246,7 +246,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: '#8E8E93',
     textAlign: 'center',
   },
 });

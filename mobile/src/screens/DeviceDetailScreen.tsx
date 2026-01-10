@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,18 +14,241 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+
+// Skeleton component with shimmer animation
+function Skeleton({ width, height, borderRadius = 8, style, bgColor = '#E5E5EA' }: {
+  width: number | string;
+  height: number;
+  borderRadius?: number;
+  style?: any;
+  bgColor?: string;
+}) {
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerAnim, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  const opacity = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          borderRadius,
+          backgroundColor: bgColor,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
+// Skeleton for Map section
+function MapSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={skeletonStyles.mapContainer}>
+      <Skeleton width="100%" height={200} borderRadius={0} bgColor={skeletonBg} />
+      <View style={skeletonStyles.mapLegend}>
+        <Skeleton width={100} height={24} bgColor={skeletonBg} />
+      </View>
+    </View>
+  );
+}
+
+// Skeleton for Status Card
+function StatusCardSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  const cardBg = isDark ? '#1C1C1E' : '#fff';
+  const borderColor = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={[skeletonStyles.card, { backgroundColor: cardBg, borderColor }]}>
+      <View style={skeletonStyles.cardRow}>
+        <Skeleton width={50} height={50} borderRadius={25} bgColor={skeletonBg} />
+        <View style={skeletonStyles.cardContent}>
+          <Skeleton width={120} height={20} style={{ marginBottom: 8 }} bgColor={skeletonBg} />
+          <Skeleton width={180} height={14} bgColor={skeletonBg} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Skeleton for Battery Card
+function BatteryCardSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  const cardBg = isDark ? '#1C1C1E' : '#fff';
+  const borderColor = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={[skeletonStyles.card, { backgroundColor: cardBg, borderColor }]}>
+      <View style={skeletonStyles.cardRow}>
+        <Skeleton width={50} height={50} borderRadius={12} bgColor={skeletonBg} />
+        <View style={skeletonStyles.cardContent}>
+          <Skeleton width={100} height={20} style={{ marginBottom: 8 }} bgColor={skeletonBg} />
+          <Skeleton width={150} height={14} bgColor={skeletonBg} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Skeleton for Alert Card
+function AlertCardSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  const cardBg = isDark ? 'rgba(255, 59, 48, 0.15)' : '#FFF5F5';
+  const borderColor = isDark ? '#FF3B30' : '#FFD5D5';
+  return (
+    <View style={[skeletonStyles.card, { backgroundColor: cardBg, borderColor }]}>
+      <View style={skeletonStyles.cardRow}>
+        <Skeleton width={50} height={50} borderRadius={25} bgColor={skeletonBg} />
+        <View style={skeletonStyles.cardContent}>
+          <Skeleton width={120} height={20} style={{ marginBottom: 8 }} bgColor={skeletonBg} />
+          <Skeleton width="90%" height={14} bgColor={skeletonBg} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Skeleton for Device Info Section
+function DeviceInfoSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={skeletonStyles.section}>
+      <Skeleton width={200} height={22} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+      <Skeleton width={40} height={14} style={{ marginBottom: 8, marginTop: 12 }} bgColor={skeletonBg} />
+      <Skeleton width="100%" height={44} style={{ marginBottom: 12 }} bgColor={skeletonBg} />
+      <Skeleton width={140} height={14} style={{ marginBottom: 8, marginTop: 12 }} bgColor={skeletonBg} />
+      <Skeleton width="100%" height={44} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+      <Skeleton width="100%" height={48} bgColor={skeletonBg} />
+    </View>
+  );
+}
+
+// Skeleton for QR Section
+function QRSectionSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  const cardBg = isDark ? '#1C1C1E' : '#fff';
+  const borderColor = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={skeletonStyles.section}>
+      <Skeleton width={100} height={22} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+      <View style={[skeletonStyles.card, { backgroundColor: cardBg, borderColor }]}>
+        <View style={skeletonStyles.cardRow}>
+          <Skeleton width={56} height={56} borderRadius={12} bgColor={skeletonBg} />
+          <View style={skeletonStyles.cardContent}>
+            <Skeleton width={80} height={18} style={{ marginBottom: 8 }} bgColor={skeletonBg} />
+            <Skeleton width="90%" height={36} bgColor={skeletonBg} />
+          </View>
+        </View>
+        <Skeleton width="100%" height={48} style={{ marginTop: 16 }} bgColor={skeletonBg} />
+      </View>
+    </View>
+  );
+}
+
+// Skeleton for Position Section
+function PositionSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={skeletonStyles.section}>
+      <Skeleton width={140} height={22} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+      <Skeleton width="80%" height={14} style={{ marginBottom: 6 }} bgColor={skeletonBg} />
+      <Skeleton width="50%" height={14} style={{ marginBottom: 6 }} bgColor={skeletonBg} />
+      <Skeleton width="60%" height={14} bgColor={skeletonBg} />
+    </View>
+  );
+}
+
+// Skeleton for Lock Section
+function LockSectionSkeleton({ isDark = false }: { isDark?: boolean }) {
+  const skeletonBg = isDark ? '#3A3A3C' : '#E5E5EA';
+  const cardBg = isDark ? '#2C2C2E' : '#F8F9FA';
+  const borderColor = isDark ? '#3A3A3C' : '#E5E5EA';
+  return (
+    <View style={skeletonStyles.section}>
+      <Skeleton width={180} height={22} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+      <View style={[skeletonStyles.card, { backgroundColor: cardBg, borderColor }]}>
+        <View style={skeletonStyles.cardRow}>
+          <Skeleton width={24} height={24} borderRadius={12} bgColor={skeletonBg} />
+          <Skeleton width={180} height={18} style={{ marginLeft: 10 }} bgColor={skeletonBg} />
+        </View>
+        <Skeleton width="100%" height={14} style={{ marginTop: 12, marginBottom: 16 }} bgColor={skeletonBg} />
+        <Skeleton width="100%" height={40} style={{ marginBottom: 16 }} bgColor={skeletonBg} />
+        <Skeleton width="100%" height={48} bgColor={skeletonBg} />
+      </View>
+    </View>
+  );
+}
+
+const skeletonStyles = StyleSheet.create({
+  mapContainer: {
+    height: 200,
+    width: '100%',
+    position: 'relative',
+  },
+  mapLegend: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  section: {
+    marginBottom: 24,
+  },
+});
 import Slider from '@react-native-community/slider';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { deviceApi, eventApi, positionApi, Device } from '../services/api';
+import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MAP_HEIGHT = 200;
 
 // Component for the pulsing status indicator
-function StatusIndicator({ isActive, size = 'large' }: { isActive: boolean; size?: 'large' | 'normal' }) {
+// status: 'reporting' (green) | 'connected' (yellow/orange) | 'offline' (red)
+function StatusIndicator({ status, size = 'large' }: { status: 'reporting' | 'connected' | 'offline'; size?: 'large' | 'normal' }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -63,8 +286,8 @@ function StatusIndicator({ isActive, size = 'large' }: { isActive: boolean; size
   }, []);
 
   const baseSize = size === 'large' ? 20 : 14;
-  const color = isActive ? '#34C759' : '#FF3B30';
-  const pulseOpacity = isActive ? 0.4 : 0.2;
+  const color = status === 'reporting' ? '#34C759' : status === 'connected' ? '#FF9500' : '#FF3B30';
+  const pulseOpacity = status === 'reporting' ? 0.4 : status === 'connected' ? 0.3 : 0.2;
 
   return (
     <View style={{ width: baseSize * 2.5, height: baseSize * 2.5, alignItems: 'center', justifyContent: 'center' }}>
@@ -104,6 +327,31 @@ function isDeviceReporting(lastPosition: any): boolean {
   const now = new Date();
   const diffMinutes = (now.getTime() - lastUpdate.getTime()) / (1000 * 60);
   return diffMinutes <= 5;
+}
+
+// Calculate device connectivity status
+// Returns: 'reporting' | 'connected' | 'offline'
+// - 'reporting': has recent GPS positions (within 5 min)
+// - 'connected': has recent battery/status updates (within 10 min) but no GPS
+// - 'offline': no recent activity
+function getDeviceStatus(device: any, lastPosition: any): 'reporting' | 'connected' | 'offline' {
+  const now = new Date();
+
+  // Check if reporting GPS positions
+  if (lastPosition) {
+    const positionTime = new Date(lastPosition.createdAt || lastPosition.timestamp);
+    const diffMinutes = (now.getTime() - positionTime.getTime()) / (1000 * 60);
+    if (diffMinutes <= 5) return 'reporting';
+  }
+
+  // Check if device has recent battery updates (connected but not sending GPS)
+  if (device?.batteryUpdatedAt) {
+    const batteryTime = new Date(device.batteryUpdatedAt);
+    const diffMinutes = (now.getTime() - batteryTime.getTime()) / (1000 * 60);
+    if (diffMinutes <= 10) return 'connected';
+  }
+
+  return 'offline';
 }
 
 // Format time ago with more detail
@@ -150,14 +398,20 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
   const [alertDescription, setAlertDescription] = useState('');
   const [creatingAlert, setCreatingAlert] = useState(false);
   const [realTimeTracking, setRealTimeTracking] = useState(false);
+  const { showSuccess, showError, showWarning } = useToast();
+  const { theme, isDark } = useTheme();
 
   // Lock/Geofence state
   const [lockRadius, setLockRadius] = useState(0);
   const [lockingDevice, setLockingDevice] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // User location state
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const mapRef = useRef<MapView>(null);
+
+  // Animation for map refresh fade
+  const mapFadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadDevice();
@@ -180,6 +434,52 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
       });
     } catch (error) {
       console.error('Error getting user location:', error);
+    }
+  };
+
+  const handleRefreshLocation = async () => {
+    if (refreshing) return;
+
+    try {
+      setRefreshing(true);
+
+      // Fade out quickly
+      Animated.timing(mapFadeAnim, {
+        toValue: 0.4,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+
+      // Fetch only the device data (includes latest position)
+      const deviceData = await deviceApi.getById(deviceId);
+
+      // Update only positions-related state
+      setDevice(prev => prev ? { ...prev, positions: deviceData.positions } : deviceData);
+
+      // Animate map to new position if available
+      const newPosition = deviceData.positions?.[0];
+      if (newPosition && mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude: newPosition.latitude,
+          longitude: newPosition.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 300);
+      }
+
+      // Fade in quickly
+      Animated.timing(mapFadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+
+    } catch (error) {
+      console.error('Error refreshing location:', error);
+      // Restore opacity on error
+      mapFadeAnim.setValue(1);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -208,7 +508,7 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
 
   const handleLockDevice = async () => {
     if (!device?.positions || device.positions.length === 0) {
-      Alert.alert('Error', 'El dispositivo no tiene ubicación disponible para bloquear');
+      showWarning('Sin ubicacion', 'El dispositivo no tiene ubicacion disponible para bloquear');
       return;
     }
 
@@ -216,15 +516,15 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
       setLockingDevice(true);
       const updatedDevice = await deviceApi.lock(deviceId, lockRadius);
       setDevice(updatedDevice);
-      Alert.alert(
+      showSuccess(
         'Dispositivo Bloqueado',
         lockRadius === 0
-          ? 'Recibirás una notificación si el dispositivo se mueve.'
-          : `Recibirás una notificación si el dispositivo se mueve más de ${lockRadius}m.`
+          ? 'Recibiras una notificacion si el dispositivo se mueve.'
+          : `Recibiras una notificacion si el dispositivo se mueve mas de ${lockRadius}m.`
       );
     } catch (error: any) {
       console.error('Error locking device:', error);
-      Alert.alert('Error', error.response?.data?.error || 'No se pudo bloquear el dispositivo');
+      showError('Error', error.response?.data?.error || 'No se pudo bloquear el dispositivo');
     } finally {
       setLockingDevice(false);
     }
@@ -235,10 +535,10 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
       setLockingDevice(true);
       const updatedDevice = await deviceApi.unlock(deviceId);
       setDevice(updatedDevice);
-      Alert.alert('Dispositivo Desbloqueado', 'Ya no recibirás alertas de movimiento.');
+      showSuccess('Dispositivo Desbloqueado', 'Ya no recibiras alertas de movimiento.');
     } catch (error: any) {
       console.error('Error unlocking device:', error);
-      Alert.alert('Error', error.response?.data?.error || 'No se pudo desbloquear el dispositivo');
+      showError('Error', error.response?.data?.error || 'No se pudo desbloquear el dispositivo');
     } finally {
       setLockingDevice(false);
     }
@@ -247,7 +547,7 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
   const handleSaveDevice = async () => {
     try {
       setSaving(true);
-      await deviceApi.update(deviceId, deviceName);
+      await deviceApi.update(deviceId, { name: deviceName });
       Alert.alert('Éxito', 'Dispositivo actualizado');
     } catch (error) {
       console.error('Error updating device:', error);
@@ -312,25 +612,82 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
     }
   };
 
+  // Show skeleton loading state - header always visible
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Cargando dispositivo...</Text>
-      </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={[styles.container, { backgroundColor: theme.bg }]}
+      >
+        {/* Header - always visible first */}
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Detalle del Dispositivo</Text>
+          <View style={styles.headerButton}>
+            <Ionicons name="refresh" size={24} color={theme.textSecondary} />
+          </View>
+        </View>
+
+        <ScrollView style={[styles.scrollView, { backgroundColor: theme.bg }]}>
+          {/* Map Skeleton */}
+          <MapSkeleton isDark={isDark} />
+
+          <View style={[styles.content, { backgroundColor: theme.bg }]}>
+            {/* Status Card Skeleton */}
+            <StatusCardSkeleton isDark={isDark} />
+
+            {/* Battery Card Skeleton */}
+            <BatteryCardSkeleton isDark={isDark} />
+
+            {/* Alert Card Skeleton */}
+            <AlertCardSkeleton isDark={isDark} />
+
+            {/* Device Info Skeleton */}
+            <DeviceInfoSkeleton isDark={isDark} />
+
+            {/* QR Section Skeleton */}
+            <QRSectionSkeleton isDark={isDark} />
+
+            {/* Position Skeleton */}
+            <PositionSkeleton isDark={isDark} />
+
+            {/* Lock Section Skeleton */}
+            <LockSectionSkeleton isDark={isDark} />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
   if (!device) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>No se pudo cargar el dispositivo</Text>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Text style={styles.backButtonText}>Volver</Text>
-        </TouchableOpacity>
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        {/* Header - always visible */}
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Detalle del Dispositivo</Text>
+          <View style={styles.headerButton} />
+        </View>
+        <View style={styles.errorContent}>
+          <Ionicons name="alert-circle-outline" size={64} color={theme.textSecondary} />
+          <Text style={[styles.errorText, { color: theme.textSecondary }]}>No se pudo cargar el dispositivo</Text>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.backButton, { backgroundColor: theme.primary.main }]}
+          >
+            <Text style={styles.backButtonText}>Volver</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -340,24 +697,34 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.bg }]}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#262626" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Detalle del Dispositivo</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Detalle del Dispositivo</Text>
+        <TouchableOpacity
+          onPress={handleRefreshLocation}
+          style={styles.headerButton}
+          disabled={refreshing}
+        >
+          {refreshing ? (
+            <ActivityIndicator size="small" color={theme.primary.main} />
+          ) : (
+            <Ionicons name="refresh" size={24} color={theme.primary.main} />
+          )}
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={[styles.scrollView, { backgroundColor: theme.bg }]}>
         {/* Device Location Map */}
         {lastPosition && (
-          <View style={styles.mapContainer}>
+          <Animated.View style={[styles.mapContainer, { opacity: mapFadeAnim }]}>
             <MapView
               ref={mapRef}
               style={styles.map}
@@ -401,74 +768,99 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
               )}
             </MapView>
             <View style={styles.mapOverlay}>
-              <View style={styles.mapLegend}>
+              <View style={[styles.mapLegend, { backgroundColor: isDark ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)' }]}>
                 <View style={styles.legendItem}>
                   <Ionicons name="location" size={16} color="#FF3B30" />
-                  <Text style={styles.legendText}>Dispositivo</Text>
+                  <Text style={[styles.legendText, { color: theme.textSecondary }]}>Dispositivo</Text>
                 </View>
                 {userLocation && (
                   <View style={styles.legendItem}>
                     <View style={[styles.userMarkerSmall]}>
                       <View style={styles.userMarkerSmallInner} />
                     </View>
-                    <Text style={styles.legendText}>Tu ubicación</Text>
+                    <Text style={[styles.legendText, { color: theme.textSecondary }]}>Tu ubicación</Text>
                   </View>
                 )}
               </View>
             </View>
-          </View>
+          </Animated.View>
         )}
 
-        <View style={styles.content}>
+        <View style={[styles.content, { backgroundColor: theme.bg }]}>
           {/* Reporting Status Card */}
-          <View style={styles.statusCard}>
-            <View style={styles.statusCardContent}>
-              <StatusIndicator isActive={isDeviceReporting(lastPosition)} />
-              <View style={styles.statusCardInfo}>
-                <Text style={[
-                  styles.statusCardTitle,
-                  isDeviceReporting(lastPosition) ? styles.statusCardTitleActive : styles.statusCardTitleInactive
-                ]}>
-                  {isDeviceReporting(lastPosition) ? 'Reportando' : 'Sin reporte'}
-                </Text>
-                <Text style={styles.statusCardDescription}>
-                  {lastPosition
-                    ? formatTimeAgoDetailed(new Date(lastPosition.createdAt || lastPosition.timestamp))
-                    : 'Nunca ha reportado ubicación'
-                  }
-                </Text>
+          {(() => {
+            const deviceStatus = getDeviceStatus(device, lastPosition);
+            const statusLabels = {
+              reporting: 'Reportando GPS',
+              connected: 'Conectado',
+              offline: 'Sin conexión',
+            };
+            const statusColors = {
+              reporting: '#34C759',
+              connected: '#FF9500',
+              offline: '#FF3B30',
+            };
+            return (
+              <View style={[styles.statusCard, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                <View style={styles.statusCardContent}>
+                  <StatusIndicator status={deviceStatus} />
+                  <View style={styles.statusCardInfo}>
+                    <Text style={[styles.statusCardTitle, { color: statusColors[deviceStatus] }]}>
+                      {statusLabels[deviceStatus]}
+                    </Text>
+                    <Text style={[styles.statusCardDescription, { color: theme.textSecondary }]}>
+                      {deviceStatus === 'reporting' && lastPosition
+                        ? `Última posición: ${formatTimeAgoDetailed(new Date(lastPosition.createdAt || lastPosition.timestamp))}`
+                        : deviceStatus === 'connected' && device?.batteryUpdatedAt
+                        ? `Última señal: ${formatTimeAgoDetailed(new Date(device.batteryUpdatedAt))}`
+                        : lastPosition
+                        ? `Última posición: ${formatTimeAgoDetailed(new Date(lastPosition.createdAt || lastPosition.timestamp))}`
+                        : 'Nunca ha reportado ubicación'
+                      }
+                    </Text>
+                  </View>
+                </View>
+                {deviceStatus === 'connected' && (
+                  <View style={[styles.statusCardWarning, { borderTopColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                    <Ionicons name="information-circle-outline" size={16} color="#FF9500" />
+                    <Text style={[styles.statusCardWarningText, { color: theme.textSecondary }]}>
+                      El dispositivo está activo pero no envía coordenadas GPS. Puede estar en interior o sin señal GPS.
+                    </Text>
+                  </View>
+                )}
+                {deviceStatus === 'offline' && lastPosition && (
+                  <View style={[styles.statusCardWarning, { borderTopColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                    <Ionicons name="warning-outline" size={16} color="#FF3B30" />
+                    <Text style={[styles.statusCardWarningText, { color: theme.textSecondary }]}>
+                      Sin actividad reciente. Verifica que el dispositivo esté encendido y tenga señal.
+                    </Text>
+                  </View>
+                )}
+                {!lastPosition && (
+                  <View style={[styles.statusCardWarning, { borderTopColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.primary.main} />
+                    <Text style={[styles.statusCardWarningText, { color: theme.textSecondary }]}>
+                      Asegúrate de que el dispositivo esté encendido y tenga señal GPS
+                    </Text>
+                  </View>
+                )}
               </View>
-            </View>
-            {!isDeviceReporting(lastPosition) && lastPosition && (
-              <View style={styles.statusCardWarning}>
-                <Ionicons name="warning-outline" size={16} color="#FF9500" />
-                <Text style={styles.statusCardWarningText}>
-                  El dispositivo no ha enviado ubicación en los últimos 5 minutos
-                </Text>
-              </View>
-            )}
-            {!lastPosition && (
-              <View style={styles.statusCardWarning}>
-                <Ionicons name="information-circle-outline" size={16} color="#007AFF" />
-                <Text style={styles.statusCardWarningText}>
-                  Asegúrate de que el dispositivo esté encendido y tenga señal GPS
-                </Text>
-              </View>
-            )}
-          </View>
+            );
+          })()}
 
           {/* Battery Status Card */}
           {device.batteryLevel !== null && device.batteryLevel !== undefined && (
             <View style={[
               styles.batteryCard,
-              device.batteryLevel <= 20 && styles.batteryCardLow
+              { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' },
+              device.batteryLevel <= 20 && (isDark ? { backgroundColor: 'rgba(255, 59, 48, 0.15)', borderColor: '#FF3B30' } : styles.batteryCardLow)
             ]}>
               <View style={styles.batteryCardContent}>
                 <View style={[
                   styles.batteryIconContainer,
-                  device.batteryLevel <= 20 && styles.batteryIconContainerLow,
-                  device.batteryLevel > 20 && device.batteryLevel <= 40 && styles.batteryIconContainerMedium,
-                  device.batteryLevel > 40 && styles.batteryIconContainerGood,
+                  device.batteryLevel <= 20 && (isDark ? { backgroundColor: 'rgba(255, 59, 48, 0.2)' } : styles.batteryIconContainerLow),
+                  device.batteryLevel > 20 && device.batteryLevel <= 40 && (isDark ? { backgroundColor: 'rgba(255, 149, 0, 0.2)' } : styles.batteryIconContainerMedium),
+                  device.batteryLevel > 40 && (isDark ? { backgroundColor: 'rgba(52, 199, 89, 0.2)' } : styles.batteryIconContainerGood),
                 ]}>
                   <Ionicons
                     name={device.batteryLevel <= 20 ? 'battery-dead' : device.batteryLevel <= 50 ? 'battery-half' : 'battery-full'}
@@ -486,14 +878,14 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
                     {device.batteryLevel}% Batería
                   </Text>
                   {device.batteryUpdatedAt && (
-                    <Text style={styles.batteryCardDescription}>
+                    <Text style={[styles.batteryCardDescription, { color: theme.textSecondary }]}>
                       Actualizado {formatTimeAgoDetailed(new Date(device.batteryUpdatedAt))}
                     </Text>
                   )}
                 </View>
               </View>
               {device.batteryLevel <= 20 && (
-                <View style={styles.batteryWarning}>
+                <View style={[styles.batteryWarning, { borderTopColor: isDark ? 'rgba(255, 59, 48, 0.3)' : '#FFD5D5' }]}>
                   <Ionicons name="warning-outline" size={16} color="#FF3B30" />
                   <Text style={styles.batteryWarningText}>
                     Batería baja - conecta el cargador pronto
@@ -503,25 +895,74 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
+          {/* Alert Section - Prominent */}
+          {activeAlert ? (
+            <View style={[styles.activeAlertCard, isDark && { backgroundColor: 'rgba(255, 59, 48, 0.15)', borderColor: '#FF3B30' }]}>
+              <View style={styles.activeAlertHeader}>
+                <View style={[styles.activeAlertIconContainer, isDark && { backgroundColor: 'rgba(255, 59, 48, 0.2)' }]}>
+                  <Ionicons name="warning" size={28} color="#FF3B30" />
+                </View>
+                <View style={styles.activeAlertInfo}>
+                  <Text style={styles.activeAlertTitle}>
+                    {EVENT_TYPES.find((t) => t.value === activeAlert.type)?.label}
+                  </Text>
+                  <Text style={[styles.activeAlertDescription, { color: theme.text }]} numberOfLines={2}>
+                    {activeAlert.description}
+                  </Text>
+                  <Text style={[styles.activeAlertDate, { color: theme.textSecondary }]}>
+                    {new Date(activeAlert.createdAt).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.closeAlertButtonNew}
+                onPress={handleCloseAlert}
+              >
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.closeAlertButtonTextNew}>Cerrar Alerta</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.createAlertCard}
+              onPress={() => navigation.navigate('AddEvent', { deviceId: device.id })}
+              activeOpacity={0.8}
+            >
+              <View style={styles.createAlertContent}>
+                <View style={styles.createAlertIconContainer}>
+                  <Ionicons name="megaphone" size={28} color="#fff" />
+                </View>
+                <View style={styles.createAlertTextContainer}>
+                  <Text style={styles.createAlertTitle}>Crear Alerta</Text>
+                  <Text style={styles.createAlertSubtitle}>
+                    Reporta un robo, extravío u otra emergencia
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          )}
+
           {/* Device Info */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Información del Dispositivo</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Información del Dispositivo</Text>
 
-            <Text style={styles.label}>IMEI</Text>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>{device.imei}</Text>
+            <Text style={[styles.label, { color: theme.text }]}>IMEI</Text>
+            <View style={[styles.infoBox, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}>
+              <Text style={[styles.infoText, { color: theme.textSecondary }]}>{device.imei}</Text>
             </View>
 
-            <Text style={styles.label}>Nombre del Dispositivo</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Nombre del Dispositivo</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: isDark ? '#2C2C2E' : '#fff', borderColor: isDark ? '#3A3A3C' : '#ddd', color: theme.text }]}
               placeholder="Nombre del dispositivo"
+              placeholderTextColor={theme.textSecondary}
               value={deviceName}
               onChangeText={setDeviceName}
             />
 
             <TouchableOpacity
-              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+              style={[styles.saveButton, { backgroundColor: theme.primary.main }, saving && styles.saveButtonDisabled]}
               onPress={handleSaveDevice}
               disabled={saving}
             >
@@ -535,23 +976,23 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
 
           {/* QR Code Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Codigo QR</Text>
-            <View style={styles.qrSectionCard}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Codigo QR</Text>
+            <View style={[styles.qrSectionCard, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
               <View style={styles.qrSectionContent}>
-                <View style={styles.qrIconContainer}>
-                  <Ionicons name="qr-code" size={32} color="#007AFF" />
+                <View style={[styles.qrIconContainer, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : '#F0F8FF' }]}>
+                  <Ionicons name="qr-code" size={32} color={theme.primary.main} />
                 </View>
                 <View style={styles.qrSectionInfo}>
-                  <Text style={styles.qrSectionTitle}>
+                  <Text style={[styles.qrSectionTitle, { color: theme.text }]}>
                     {device.qrEnabled ? 'QR activo' : 'QR disponible'}
                   </Text>
-                  <Text style={styles.qrSectionSubtitle}>
+                  <Text style={[styles.qrSectionSubtitle, { color: theme.textSecondary }]}>
                     Quien escanee el QR podra contactarte de forma anonima si encuentra tu dispositivo
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
-                style={styles.qrButton}
+                style={[styles.qrButton, { backgroundColor: theme.primary.main }]}
                 onPress={() => navigation.navigate('DeviceQR', { deviceId: device.id })}
               >
                 <Ionicons name="qr-code-outline" size={20} color="#fff" />
@@ -563,16 +1004,16 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
           {/* Last Position */}
           {lastPosition && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Última Ubicación</Text>
-              <Text style={styles.positionText}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Última Ubicación</Text>
+              <Text style={[styles.positionText, { color: theme.textSecondary }]}>
                 Lat: {lastPosition.latitude.toFixed(6)}, Lon: {lastPosition.longitude.toFixed(6)}
               </Text>
               {lastPosition.speed !== null && (
-                <Text style={styles.positionText}>
+                <Text style={[styles.positionText, { color: theme.textSecondary }]}>
                   Velocidad: {lastPosition.speed.toFixed(1)} km/h
                 </Text>
               )}
-              <Text style={styles.positionText}>
+              <Text style={[styles.positionText, { color: theme.textSecondary }]}>
                 {new Date(lastPosition.timestamp).toLocaleString()}
               </Text>
             </View>
@@ -580,21 +1021,21 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
 
           {/* Lock/Geofence Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Bloqueo de Movimiento</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Bloqueo de Movimiento</Text>
 
             {device.isLocked ? (
-              <View style={styles.lockActiveCard}>
+              <View style={[styles.lockActiveCard, isDark && { backgroundColor: 'rgba(255, 149, 0, 0.15)', borderColor: '#FF9500' }]}>
                 <View style={styles.lockActiveHeader}>
                   <Ionicons name="lock-closed" size={24} color="#FF9500" />
                   <View style={styles.lockActiveInfo}>
                     <Text style={styles.lockActiveTitle}>Dispositivo Bloqueado</Text>
-                    <Text style={styles.lockActiveSubtitle}>
+                    <Text style={[styles.lockActiveSubtitle, { color: theme.textSecondary }]}>
                       {device.lockRadius === 0
                         ? 'Alerta si hay cualquier movimiento'
                         : `Radio permitido: ${device.lockRadius}m`}
                     </Text>
                     {device.lockedAt && (
-                      <Text style={styles.lockActiveDate}>
+                      <Text style={[styles.lockActiveDate, { color: theme.textSecondary }]}>
                         Bloqueado {formatTimeAgoDetailed(new Date(device.lockedAt))}
                       </Text>
                     )}
@@ -617,23 +1058,23 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.lockSetupCard}>
+              <View style={[styles.lockSetupCard, { backgroundColor: isDark ? '#2C2C2E' : '#F8F9FA', borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]}>
                 <View style={styles.lockSetupHeader}>
-                  <Ionicons name="shield-outline" size={24} color="#007AFF" />
-                  <Text style={styles.lockSetupTitle}>
+                  <Ionicons name="shield-outline" size={24} color={theme.primary.main} />
+                  <Text style={[styles.lockSetupTitle, { color: theme.primary.main }]}>
                     Bloquear en posición actual
                   </Text>
                 </View>
 
-                <Text style={styles.lockSetupDescription}>
+                <Text style={[styles.lockSetupDescription, { color: theme.textSecondary }]}>
                   Recibe una notificación si el dispositivo se mueve fuera del radio permitido.
                   Ideal para vehículos estacionados o mascotas.
                 </Text>
 
                 <View style={styles.radiusContainer}>
-                  <Text style={styles.radiusLabel}>Radio de movimiento permitido</Text>
+                  <Text style={[styles.radiusLabel, { color: theme.text }]}>Radio de movimiento permitido</Text>
                   <View style={styles.radiusValueContainer}>
-                    <Text style={styles.radiusValue}>
+                    <Text style={[styles.radiusValue, { color: theme.primary.main }]}>
                       {lockRadius === 0 ? 'Sin movimiento' : `${lockRadius}m`}
                     </Text>
                   </View>
@@ -644,18 +1085,18 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
                     step={5}
                     value={lockRadius}
                     onValueChange={setLockRadius}
-                    minimumTrackTintColor="#007AFF"
-                    maximumTrackTintColor="#E5E5EA"
-                    thumbTintColor="#007AFF"
+                    minimumTrackTintColor={theme.primary.main}
+                    maximumTrackTintColor={isDark ? '#3A3A3C' : '#E5E5EA'}
+                    thumbTintColor={theme.primary.main}
                   />
                   <View style={styles.radiusHints}>
-                    <Text style={styles.radiusHint}>0m (Vehículo)</Text>
-                    <Text style={styles.radiusHint}>100m (Mascota)</Text>
+                    <Text style={[styles.radiusHint, { color: theme.textSecondary }]}>0m (Vehículo)</Text>
+                    <Text style={[styles.radiusHint, { color: theme.textSecondary }]}>100m (Mascota)</Text>
                   </View>
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.lockButton, (!lastPosition || lockingDevice) && styles.buttonDisabled]}
+                  style={[styles.lockButton, { backgroundColor: theme.primary.main }, (!lastPosition || lockingDevice) && styles.buttonDisabled]}
                   onPress={handleLockDevice}
                   disabled={!lastPosition || lockingDevice}
                 >
@@ -678,100 +1119,64 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
             )}
           </View>
 
-          {/* Active Alert */}
-          {activeAlert ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Alerta Activa</Text>
-              <View style={styles.activeAlertBox}>
-                <View style={styles.alertHeader}>
-                  <Ionicons name="warning" size={24} color="#FF3B30" />
-                  <Text style={styles.alertType}>
-                    {EVENT_TYPES.find((t) => t.value === activeAlert.type)?.label}
-                  </Text>
-                </View>
-                <Text style={styles.alertDescription}>{activeAlert.description}</Text>
-                <Text style={styles.alertDate}>
-                  {new Date(activeAlert.createdAt).toLocaleString()}
-                </Text>
-                <TouchableOpacity
-                  style={styles.closeAlertButton}
-                  onPress={handleCloseAlert}
-                >
-                  <Text style={styles.closeAlertButtonText}>Cerrar Alerta</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Alertas Urgentes</Text>
-              <Text style={styles.infoText}>
-                No hay alertas activas para este dispositivo.
-              </Text>
-              <TouchableOpacity
-                style={styles.createAlertButton}
-                onPress={() => setShowAlertModal(true)}
-              >
-                <Ionicons name="alert-circle" size={24} color="#fff" />
-                <Text style={styles.createAlertButtonText}>Crear Alerta Urgente</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
           {/* Alert Modal */}
           {showAlertModal && (
             <View style={styles.modalOverlay}>
-              <View style={styles.modal}>
-                <Text style={styles.modalTitle}>Crear Alerta Urgente</Text>
+              <View style={[styles.modal, { backgroundColor: theme.surface }]}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Crear Alerta Urgente</Text>
 
-                <Text style={styles.label}>Tipo de Alerta</Text>
-                <View style={styles.pickerContainer}>
+                <Text style={[styles.label, { color: theme.text }]}>Tipo de Alerta</Text>
+                <View style={[styles.pickerContainer, { borderColor: isDark ? '#3A3A3C' : '#ddd', backgroundColor: isDark ? '#2C2C2E' : '#fff' }]}>
                   <Picker
                     selectedValue={alertType}
                     onValueChange={setAlertType}
+                    style={{ color: theme.text }}
                   >
                     {EVENT_TYPES.map((type) => (
-                      <Picker.Item key={type.value} label={type.label} value={type.value} />
+                      <Picker.Item key={type.value} label={type.label} value={type.value} color={theme.text} />
                     ))}
                   </Picker>
                 </View>
 
-                <Text style={styles.label}>Descripción</Text>
+                <Text style={[styles.label, { color: theme.text }]}>Descripción</Text>
                 <TextInput
-                  style={styles.textArea}
+                  style={[styles.textArea, { backgroundColor: isDark ? '#2C2C2E' : '#fff', borderColor: isDark ? '#3A3A3C' : '#ddd', color: theme.text }]}
                   placeholder="Describe la situación..."
+                  placeholderTextColor={theme.textSecondary}
                   value={alertDescription}
                   onChangeText={setAlertDescription}
                   multiline
                   numberOfLines={4}
                 />
 
-                <View style={styles.switchContainer}>
+                <View style={[styles.switchContainer, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}>
                   <View style={styles.switchLabel}>
-                    <Ionicons name="locate" size={20} color="#262626" />
-                    <Text style={styles.switchText}>Rastrear en tiempo real</Text>
+                    <Ionicons name="locate" size={20} color={theme.text} />
+                    <Text style={[styles.switchText, { color: theme.text }]}>Rastrear en tiempo real</Text>
                   </View>
                   <Switch
                     value={realTimeTracking}
                     onValueChange={setRealTimeTracking}
-                    trackColor={{ false: '#d1d1d1', true: '#007AFF' }}
+                    trackColor={{ false: isDark ? '#3A3A3C' : '#d1d1d1', true: theme.primary.main }}
                     thumbColor="#fff"
                   />
                 </View>
                 {realTimeTracking && (
-                  <Text style={styles.trackingInfo}>
+                  <Text style={[styles.trackingInfo, { color: theme.textSecondary }]}>
                     Se registrará la ruta del dispositivo cada 30 segundos mientras la alerta esté activa
                   </Text>
                 )}
 
                 <View style={styles.modalButtons}>
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.cancelButton]}
+                    style={[styles.modalButton, styles.cancelButton, { backgroundColor: isDark ? '#3A3A3C' : '#f5f5f5' }]}
                     onPress={() => {
                       setShowAlertModal(false);
                       setAlertDescription('');
                     }}
                   >
-                    <Text style={styles.cancelButtonText}>Cancelar</Text>
+                    <Text style={[styles.cancelButtonText, { color: theme.text }]}>Cancelar</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -839,10 +1244,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  errorContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
   errorText: {
     fontSize: 16,
     color: '#666',
+    marginTop: 16,
     marginBottom: 20,
+    textAlign: 'center',
   },
   backButton: {
     paddingHorizontal: 20,
@@ -888,12 +1301,6 @@ const styles = StyleSheet.create({
   statusCardTitle: {
     fontSize: 18,
     fontWeight: '700',
-  },
-  statusCardTitleActive: {
-    color: '#34C759',
-  },
-  statusCardTitleInactive: {
-    color: '#FF3B30',
   },
   statusCardDescription: {
     fontSize: 14,
@@ -1437,5 +1844,103 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     borderWidth: 1,
     borderColor: 'white',
+  },
+  // New prominent alert styles
+  createAlertCard: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  createAlertContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  createAlertIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  createAlertTextContainer: {
+    flex: 1,
+  },
+  createAlertTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  createAlertSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  activeAlertCard: {
+    backgroundColor: '#FFF5F5',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  activeAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  activeAlertIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FFEBEB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  activeAlertInfo: {
+    flex: 1,
+  },
+  activeAlertTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FF3B30',
+    marginBottom: 4,
+  },
+  activeAlertDescription: {
+    fontSize: 14,
+    color: '#262626',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  activeAlertDate: {
+    fontSize: 12,
+    color: '#8E8E93',
+  },
+  closeAlertButtonNew: {
+    backgroundColor: '#34C759',
+    borderRadius: 10,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  closeAlertButtonTextNew: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

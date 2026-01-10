@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Image } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface PeekLogoProps {
   size?: 'small' | 'medium' | 'large';
@@ -20,11 +21,15 @@ export function PeekLogo({
   size = 'medium',
   onPress,
   showBubble = true,
-  variant = 'default',
+  variant: variantProp,
   isPeeking = false,
 }: PeekLogoProps) {
+  const { isDark } = useTheme();
   const config = sizeConfig[size];
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Auto-detect variant based on dark mode if not explicitly provided
+  const variant = variantProp ?? (isDark ? 'white' : 'default');
 
   // Pulse animation for the badge - like an antenna transmitting
   useEffect(() => {
@@ -76,12 +81,17 @@ export function PeekLogo({
 
   const c = variantColors[variant];
 
+  // Hide icon for 'white' variant since icon.png has non-transparent background
+  const showIcon = variant !== 'white';
+
   const LogoContent = (
     <View style={styles.logoWrapper}>
-      <Image
-        source={require('../../assets/icon.png')}
-        style={[styles.logoImage, { width: config.logoSize, height: config.logoSize }]}
-      />
+      {showIcon && (
+        <Image
+          source={require('../../assets/icon.png')}
+          style={[styles.logoImage, { width: config.logoSize, height: config.logoSize }]}
+        />
+      )}
       <Text style={[styles.logoText, { fontSize: config.fontSize }]}>
         <Text style={[styles.accentLetter, { color: c.accent }]}>P</Text>
         <Text style={[styles.normalLetter, { color: c.text }]}>ee</Text>

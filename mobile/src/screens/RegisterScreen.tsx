@@ -15,11 +15,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { usePeekMode } from '../contexts/PeekModeContext';
-import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PeekLogo } from '../components/PeekLogo';
-import { radius } from '../theme/colors';
+import { darkTheme, radius } from '../theme/colors';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -34,8 +33,10 @@ export default function RegisterScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const { setPeekMode } = usePeekMode();
-  const { theme, isDark } = useTheme();
   const { showError, showWarning } = useToast();
+
+  // Always use dark theme for auth screens
+  const theme = darkTheme;
 
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -75,12 +76,12 @@ export default function RegisterScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg.primary }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle="light-content" />
 
       {/* Background gradient */}
       <LinearGradient
-        colors={[theme.bg.primary, theme.bg.secondary, theme.bg.primary]}
+        colors={[theme.bg, theme.bgSecondary, theme.bg]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -113,26 +114,26 @@ export default function RegisterScreen({ navigation }: Props) {
         >
           <View style={styles.content}>
             <View style={styles.logoContainer}>
-              <PeekLogo size="large" showBubble={false} variant={isDark ? 'white' : 'dark'} />
+              <PeekLogo size="large" showBubble={false} variant="white" />
             </View>
-            <Text style={[styles.subtitle, { color: theme.text.secondary }]}>Crea tu cuenta</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Crea tu cuenta</Text>
 
             {/* Glass card for inputs */}
             <View style={[styles.glassCard, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border }]}>
               <View style={styles.inputContainer}>
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                   placeholder="Nombre completo"
-                  placeholderTextColor={theme.text.tertiary}
+                  placeholderTextColor={theme.textTertiary}
                   value={name}
                   onChangeText={setName}
                   editable={!loading}
                 />
 
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                   placeholder="Email"
-                  placeholderTextColor={theme.text.tertiary}
+                  placeholderTextColor={theme.textTertiary}
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -141,9 +142,9 @@ export default function RegisterScreen({ navigation }: Props) {
                 />
 
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                   placeholder="Contrasena"
-                  placeholderTextColor={theme.text.tertiary}
+                  placeholderTextColor={theme.textTertiary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -151,9 +152,9 @@ export default function RegisterScreen({ navigation }: Props) {
                 />
 
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text.primary }]}
+                  style={[styles.input, { backgroundColor: theme.glass.bg, borderColor: theme.glass.border, color: theme.text }]}
                   placeholder="Confirmar contrasena"
-                  placeholderTextColor={theme.text.tertiary}
+                  placeholderTextColor={theme.textTertiary}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
@@ -180,12 +181,12 @@ export default function RegisterScreen({ navigation }: Props) {
                   <Ionicons
                     name={enablePeekMode ? 'eye' : 'eye-off'}
                     size={24}
-                    color={enablePeekMode ? theme.success.main : theme.text.tertiary}
+                    color={enablePeekMode ? theme.success.main : theme.textTertiary}
                   />
                 </View>
                 <View style={styles.peekModeInfo}>
                   <View style={styles.peekModeTitleRow}>
-                    <Text style={[styles.peekModeTitle, { color: theme.text.primary }]}>Modo PeeKing</Text>
+                    <Text style={[styles.peekModeTitle, { color: theme.text }]}>Modo PeeKing</Text>
                     <View style={[
                       styles.peekModeToggle,
                       { backgroundColor: theme.glass.bgActive },
@@ -197,7 +198,7 @@ export default function RegisterScreen({ navigation }: Props) {
                       ]} />
                     </View>
                   </View>
-                  <Text style={[styles.peekModeSubtitle, { color: theme.text.secondary }]}>
+                  <Text style={[styles.peekModeSubtitle, { color: theme.textSecondary }]}>
                     Ver eventos publicos cercanos en el mapa
                   </Text>
                 </View>
@@ -206,19 +207,19 @@ export default function RegisterScreen({ navigation }: Props) {
               <View style={[styles.peekModeExplanation, { borderTopColor: theme.glass.border }]}>
                 <View style={styles.explanationItem}>
                   <Ionicons name="shield-checkmark" size={16} color={theme.success.main} />
-                  <Text style={[styles.explanationText, { color: theme.text.secondary }]}>
+                  <Text style={[styles.explanationText, { color: theme.textSecondary }]}>
                     Tu ubicacion nunca se comparte con otros usuarios
                   </Text>
                 </View>
                 <View style={styles.explanationItem}>
                   <Ionicons name="location-outline" size={16} color={theme.primary.main} />
-                  <Text style={[styles.explanationText, { color: theme.text.secondary }]}>
+                  <Text style={[styles.explanationText, { color: theme.textSecondary }]}>
                     Solo veras eventos en las zonas que visites
                   </Text>
                 </View>
                 <View style={styles.explanationItem}>
                   <Ionicons name="toggle-outline" size={16} color={theme.accent.main} />
-                  <Text style={[styles.explanationText, { color: theme.text.secondary }]}>
+                  <Text style={[styles.explanationText, { color: theme.textSecondary }]}>
                     Puedes activar o desactivar esto cuando quieras
                   </Text>
                 </View>
@@ -226,8 +227,8 @@ export default function RegisterScreen({ navigation }: Props) {
 
               {!enablePeekMode && (
                 <View style={[styles.disabledNote, { backgroundColor: theme.glass.bgActive }]}>
-                  <Ionicons name="information-circle" size={16} color={theme.text.tertiary} />
-                  <Text style={[styles.disabledNoteText, { color: theme.text.secondary }]}>
+                  <Ionicons name="information-circle" size={16} color={theme.textTertiary} />
+                  <Text style={[styles.disabledNoteText, { color: theme.textSecondary }]}>
                     No veras eventos de la comunidad hasta que lo actives
                   </Text>
                 </View>
@@ -261,7 +262,7 @@ export default function RegisterScreen({ navigation }: Props) {
               disabled={loading}
               style={styles.linkContainer}
             >
-              <Text style={[styles.link, { color: theme.text.tertiary }]}>
+              <Text style={[styles.link, { color: theme.textTertiary }]}>
                 Ya tienes cuenta? <Text style={[styles.linkBold, { color: theme.primary.light }]}>Inicia sesion</Text>
               </Text>
             </TouchableOpacity>

@@ -17,6 +17,7 @@ import { deviceApi } from '../services/api';
 import { BASE_URL } from '../config/environment';
 import { useDeviceStore } from '../store/useDeviceStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../contexts/ThemeContext';
 import QRCode from 'react-native-qrcode-svg';
 
 // Color palette for tagged objects
@@ -58,6 +59,7 @@ export function AddTaggedObjectScreen({ navigation }: any) {
   const [createdDevice, setCreatedDevice] = useState<any>(null);
   const { addDevice } = useDeviceStore();
   const insets = useSafeAreaInsets();
+  const { theme, isDark } = useTheme();
 
   const handleAddObject = async () => {
     if (!name.trim()) {
@@ -102,10 +104,10 @@ export function AddTaggedObjectScreen({ navigation }: any) {
     const qrUrl = `${BASE_URL}/q/${createdDevice.qrCode}`;
 
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
+        <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
           <View style={styles.headerButton} />
-          <Text style={styles.headerTitle}>Objeto Creado</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Objeto Creado</Text>
           <TouchableOpacity style={styles.headerButton} onPress={handleDone}>
             <Text style={styles.doneText}>Listo</Text>
           </TouchableOpacity>
@@ -116,13 +118,13 @@ export function AddTaggedObjectScreen({ navigation }: any) {
             <Ionicons name="checkmark-circle" size={64} color="#34C759" />
           </View>
 
-          <Text style={styles.successTitle}>{createdDevice.name}</Text>
-          <Text style={styles.successSubtitle}>
+          <Text style={[styles.successTitle, { color: theme.text }]}>{createdDevice.name}</Text>
+          <Text style={[styles.successSubtitle, { color: theme.textSecondary }]}>
             Tu objeto ha sido registrado. Imprime o comparte este codigo QR y pegalo en el objeto.
           </Text>
 
           {/* QR Code Card */}
-          <View style={styles.qrCard}>
+          <View style={[styles.qrCard, { backgroundColor: theme.surface }]}>
             <View style={styles.qrContainer}>
               <QRCode
                 value={qrUrl}
@@ -131,7 +133,7 @@ export function AddTaggedObjectScreen({ navigation }: any) {
                 color="#000"
               />
             </View>
-            <Text style={styles.qrHint}>
+            <Text style={[styles.qrHint, { color: theme.textSecondary }]}>
               Quien escanee este codigo podra contactarte si encuentra tu objeto
             </Text>
           </View>
@@ -147,22 +149,22 @@ export function AddTaggedObjectScreen({ navigation }: any) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionButton, styles.viewButton]}
+              style={[styles.actionButton, styles.viewButton, { backgroundColor: theme.surface, borderColor: theme.primary.main }]}
               onPress={() =>
                 navigation.replace('DeviceQR', { deviceId: createdDevice.id })
               }
             >
-              <Ionicons name="qr-code-outline" size={22} color="#007AFF" />
-              <Text style={[styles.actionButtonText, { color: '#007AFF' }]}>
+              <Ionicons name="qr-code-outline" size={22} color={theme.primary.main} />
+              <Text style={[styles.actionButtonText, { color: theme.primary.main }]}>
                 Ver Opciones QR
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Info Box */}
-          <View style={styles.infoBox}>
+          <View style={[styles.infoBox, { backgroundColor: isDark ? 'rgba(255, 149, 0, 0.15)' : '#FFF8E6' }]}>
             <Ionicons name="information-circle" size={20} color="#FF9500" />
-            <Text style={styles.infoText}>
+            <Text style={[styles.infoText, { color: isDark ? '#FFB84D' : '#946C00' }]}>
               Puedes desactivar o regenerar el codigo QR en cualquier momento desde los ajustes del dispositivo.
             </Text>
           </View>
@@ -173,15 +175,15 @@ export function AddTaggedObjectScreen({ navigation }: any) {
 
   // Form state
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
+      <View style={[styles.header, { backgroundColor: theme.bg, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="chevron-back" size={24} color="#007AFF" />
+          <Ionicons name="chevron-back" size={24} color={theme.primary.main} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nuevo Objeto</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Nuevo Objeto</Text>
         <View style={styles.headerRight} />
       </View>
 
@@ -203,30 +205,34 @@ export function AddTaggedObjectScreen({ navigation }: any) {
             >
               <Ionicons name="pricetag-outline" size={40} color={selectedColor} />
             </View>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
               Registra un objeto con codigo QR para que quien lo encuentre pueda contactarte
             </Text>
           </View>
 
           {/* Form Card */}
-          <View style={styles.formCard}>
+          <View style={[styles.formCard, { backgroundColor: theme.surface }]}>
             {/* Name Input */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Ionicons name="text-outline" size={18} color="#8E8E93" />
-                <Text style={styles.label}>Nombre del objeto</Text>
+                <Ionicons name="text-outline" size={18} color={theme.textSecondary} />
+                <Text style={[styles.label, { color: theme.text }]}>Nombre del objeto</Text>
                 <Text style={styles.required}>*</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, {
+                  borderColor: theme.border,
+                  backgroundColor: isDark ? '#2C2C2E' : '#FAFAFA',
+                  color: theme.text
+                }]}
                 placeholder="Ej: Llaves de casa, Billetera, Mochila..."
-                placeholderTextColor="#C7C7CC"
+                placeholderTextColor={theme.textSecondary}
                 value={name}
                 onChangeText={setName}
                 maxLength={50}
                 editable={!loading}
               />
-              <Text style={styles.inputHint}>
+              <Text style={[styles.inputHint, { color: theme.textSecondary }]}>
                 Este nombre sera visible para quien escanee el codigo QR
               </Text>
             </View>
@@ -234,10 +240,10 @@ export function AddTaggedObjectScreen({ navigation }: any) {
             {/* Color Picker */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Ionicons name="color-palette-outline" size={18} color="#8E8E93" />
-                <Text style={styles.label}>Color del objeto</Text>
+                <Ionicons name="color-palette-outline" size={18} color={theme.textSecondary} />
+                <Text style={[styles.label, { color: theme.text }]}>Color del objeto</Text>
               </View>
-              <Text style={styles.colorHint}>
+              <Text style={[styles.colorHint, { color: theme.textSecondary }]}>
                 Para identificar el objeto en tu lista
               </Text>
               <View style={styles.colorPicker}>
@@ -254,32 +260,32 @@ export function AddTaggedObjectScreen({ navigation }: any) {
           </View>
 
           {/* Preview Card */}
-          <View style={styles.previewCard}>
-            <Text style={styles.previewTitle}>Vista previa</Text>
+          <View style={[styles.previewCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.previewTitle, { color: theme.textSecondary }]}>Vista previa</Text>
             <View style={styles.previewContent}>
               <View style={[styles.objectPreview, { backgroundColor: selectedColor }]}>
                 <Ionicons name="pricetag" size={24} color="#fff" />
               </View>
               <View style={styles.previewInfo}>
-                <Text style={styles.previewName}>
+                <Text style={[styles.previewName, { color: theme.text }]}>
                   {name.trim() || 'Mi objeto'}
                 </Text>
-                <Text style={styles.previewSubtext}>Tag con codigo QR</Text>
+                <Text style={[styles.previewSubtext, { color: theme.textSecondary }]}>Tag con codigo QR</Text>
               </View>
             </View>
           </View>
 
           {/* Privacy Note */}
-          <View style={styles.privacyNote}>
+          <View style={[styles.privacyNote, { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.15)' : '#E8F8ED' }]}>
             <Ionicons name="shield-checkmark" size={20} color="#34C759" />
-            <Text style={styles.privacyText}>
+            <Text style={[styles.privacyText, { color: isDark ? '#5DD27A' : '#2D6A4F' }]}>
               Tus datos personales no se comparten automaticamente. Solo se compartira lo que decidas en el chat.
             </Text>
           </View>
         </ScrollView>
 
         {/* Bottom Button */}
-        <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 16, backgroundColor: theme.bg, borderTopColor: theme.border }]}>
           <TouchableOpacity
             style={[
               styles.addButton,

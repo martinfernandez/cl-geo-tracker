@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -9,6 +9,7 @@ import { useOnboarding } from '../contexts/OnboardingContext';
 import MessageNotification from '../components/MessageNotification';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../contexts/ThemeContext';
 import { PeekLogo } from '../components/PeekLogo';
 import { MapScreen } from '../screens/MapScreen';
 import { DevicesScreen } from '../screens/DevicesScreen';
@@ -126,14 +127,14 @@ function AuthNavigator() {
 }
 
 // Custom FAB button for creating events
-function CreateEventButton({ onPress }: { onPress: () => void }) {
+function CreateEventButton({ onPress, borderColor }: { onPress: () => void; borderColor: string }) {
   return (
     <TouchableOpacity
       style={fabStyles.container}
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <View style={fabStyles.button}>
+      <View style={[fabStyles.button, { borderColor }]}>
         <View style={fabStyles.iconContainer}>
           <Ionicons name="add" size={32} color="#fff" />
         </View>
@@ -157,16 +158,15 @@ const fabStyles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.primary.main,
+    backgroundColor: '#8B5CF6',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.primary.dark,
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
     borderWidth: 4,
-    borderColor: colors.neutral[0],
   },
   iconContainer: {
     width: 60,
@@ -179,6 +179,7 @@ const fabStyles = StyleSheet.create({
 
 function MainTabNavigator() {
   const navigation = useNavigation<any>();
+  const { theme, isDark } = useTheme();
   const [unreadMessageCount, setUnreadMessageCount] = React.useState(0);
   const [activeFoundChatsCount, setActiveFoundChatsCount] = React.useState(0);
 
@@ -246,12 +247,12 @@ function MainTabNavigator() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: colors.primary.main,
-        tabBarInactiveTintColor: colors.neutral[400],
+        tabBarActiveTintColor: theme.primary.main,
+        tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
-          backgroundColor: colors.neutral[0],
+          backgroundColor: theme.surface,
           borderTopWidth: 1,
-          borderTopColor: colors.neutral[200],
+          borderTopColor: theme.border,
           height: 85,
           paddingBottom: 20,
           paddingTop: 12,
@@ -293,7 +294,7 @@ function MainTabNavigator() {
                     position: 'absolute',
                     right: -10,
                     top: -6,
-                    backgroundColor: activeFoundChatsCount > 0 ? '#FF9500' : colors.error.main,
+                    backgroundColor: activeFoundChatsCount > 0 ? '#FF9500' : theme.error.main,
                     borderRadius: 10,
                     minWidth: 20,
                     height: 20,
@@ -301,12 +302,12 @@ function MainTabNavigator() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 2,
-                    borderColor: colors.neutral[0],
+                    borderColor: theme.surface,
                   }}
                 >
                   <Text
                     style={{
-                      color: colors.neutral[0],
+                      color: '#FFFFFF',
                       fontSize: 11,
                       fontWeight: '700',
                     }}
@@ -344,7 +345,7 @@ function MainTabNavigator() {
         options={{
           title: '',
           tabBarButton: (props) => (
-            <CreateEventButton onPress={handleCreateEvent} />
+            <CreateEventButton onPress={handleCreateEvent} borderColor={theme.surface} />
           ),
         }}
         listeners={{
@@ -498,17 +499,48 @@ function RootStackNavigator() {
   );
 }
 
+function LoadingScreen() {
+  const { theme, isDark } = useTheme();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.bg }}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }],
+        }}
+      >
+        <PeekLogo size="large" showBubble={false} variant={isDark ? 'white' : 'dark'} />
+      </Animated.View>
+    </View>
+  );
+}
+
 export function AppNavigator() {
   const { isAuthenticated, loading } = useAuth();
   const { hasCompletedOnboarding } = useOnboarding();
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <StatusBar barStyle="dark-content" />
-        <PeekLogo size="large" showBubble={false} />
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {

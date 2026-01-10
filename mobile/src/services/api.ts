@@ -6,7 +6,7 @@ console.log(`[API] Environment: ${ENV}, URL: ${API_URL}`);
 
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -15,7 +15,7 @@ export const api = axios.create({
 // Public API instance - no auth token
 export const publicApi = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -218,6 +218,10 @@ export const eventApi = {
     return response.data;
   },
   uploadImage: async (uri: string) => {
+    console.log('[Upload] Starting image upload');
+    console.log('[Upload] API Base URL:', API_URL);
+    console.log('[Upload] Image URI:', uri);
+
     const formData = new FormData();
     formData.append('image', {
       uri,
@@ -225,12 +229,22 @@ export const eventApi = {
       name: 'event-image.jpg',
     } as any);
 
-    const response = await api.post('/upload/image', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data.imageUrl;
+    try {
+      console.log('[Upload] Posting to /upload/image');
+      const response = await api.post('/upload/image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      console.log('[Upload] Success, imageUrl:', response.data.imageUrl);
+      return response.data.imageUrl;
+    } catch (error: any) {
+      console.error('[Upload] Error uploading image:', error.message);
+      console.error('[Upload] Error status:', error.response?.status);
+      console.error('[Upload] Error data:', error.response?.data);
+      console.error('[Upload] Request URL:', error.config?.baseURL + error.config?.url);
+      throw error;
+    }
   },
 };
 

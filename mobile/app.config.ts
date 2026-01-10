@@ -28,6 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           'PeeK necesita acceso a tu ubicación para compartirla con tu grupo incluso cuando la app está en segundo plano.',
         NSLocationWhenInUseUsageDescription:
           'PeeK necesita acceso a tu ubicación para mostrarte en el mapa.',
+        ITSAppUsesNonExemptEncryption: false,
       },
     },
     android: {
