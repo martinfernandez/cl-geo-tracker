@@ -192,6 +192,16 @@ export function useMapState({ navigation, route }: UseMapStateOptions) {
       if (filters.type !== 'ALL') params.type = filters.type;
 
       const data = await eventApi.getPublicByRegion(params);
+      // DEBUG: Log API response to check media data
+      console.log('[useMapState] API response:', data.length, 'events');
+      if (data.length > 0) {
+        console.log('[useMapState] First event media check:', {
+          id: data[0].id?.substring(0, 8),
+          hasMedia: !!data[0].media,
+          mediaLength: data[0].media?.length,
+          imageUrl: data[0].imageUrl?.substring(0, 50),
+        });
+      }
       if (!isMounted.current) return;
 
       // Update pinned events (events with active traces)

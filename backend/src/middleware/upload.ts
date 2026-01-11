@@ -22,7 +22,8 @@ const s3Client = isS3Configured
     })
   : null;
 
-const fileFilter = (
+// File filter for images only
+const imageFileFilter = (
   req: Request,
   file: Express.Multer.File,
   cb: multer.FileFilterCallback
@@ -40,6 +41,28 @@ const fileFilter = (
   }
 };
 
+// File filter for media (images + videos)
+const mediaFileFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const imageTypes = /jpeg|jpg|png|gif|webp/;
+  const videoTypes = /mp4|mov|quicktime|m4v/;
+
+  const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+  const mime = file.mimetype.toLowerCase();
+
+  const isImage = imageTypes.test(ext) || imageTypes.test(mime.split('/')[1] || '');
+  const isVideo = videoTypes.test(ext) || mime.startsWith('video/');
+
+  if (isImage || isVideo) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only image and video files are allowed (jpg, png, gif, webp, mp4, mov)'));
+  }
+};
+
 // Use memory storage for compression before upload
 const memoryStorage = multer.memoryStorage();
 
@@ -49,12 +72,22 @@ if (isS3Configured) {
   console.log('[Upload] Using local storage with compression');
 }
 
+// Upload middleware for images only (10MB limit)
 export const upload = multer({
   storage: memoryStorage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit for images
   },
-  fileFilter,
+  fileFilter: imageFileFilter,
+});
+
+// Upload middleware for media (images + videos, 50MB limit for videos)
+export const uploadMedia = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit to accommodate videos
+  },
+  fileFilter: mediaFileFilter,
 });
 
 // Upload buffer to S3
@@ -76,8 +109,8 @@ export async function uploadToS3(buffer: Buffer, key: string, mimetype: string):
 }
 
 // Save buffer to local file
-export async function saveToLocal(buffer: Buffer, filename: string): Promise<string> {
-  const uploadDir = 'uploads/events';
+export async function saveToLocal(buffer: Buffer, filename: string, subdir: string = 'events'): Promise<string> {
+  const uploadDir = `uploads/${subdir}`;
 
   // Ensure directory exists
   if (!fs.existsSync(uploadDir)) {
@@ -87,7 +120,18 @@ export async function saveToLocal(buffer: Buffer, filename: string): Promise<str
   const filepath = path.join(uploadDir, filename);
   fs.writeFileSync(filepath, buffer);
 
-  return `/uploads/events/${filename}`;
+  return `/uploads/${subdir}/${filename}`;
+}
+
+// Helper to determine if a file is a video based on mimetype
+export function isVideoMimetype(mimetype: string): boolean {
+  return mimetype.startsWith('video/');
+}
+
+// Helper to generate unique filename with extension
+export function generateUniqueFilename(extension: string = 'jpg'): string {
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  return `${uniqueSuffix}.${extension}`;
 }
 
 export { isS3Configured, s3Client };

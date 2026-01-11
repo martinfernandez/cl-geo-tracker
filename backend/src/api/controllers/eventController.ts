@@ -79,6 +79,9 @@ export class EventController {
         ? (isPublic ?? false)  // Con grupo: privado por defecto
         : (isPublic ?? true);  // Sin grupo: público por defecto
 
+      // Extract media array from request body
+      const { media } = req.body;
+
       const event = await prisma.event.create({
         data: {
           deviceId: deviceId || null,
@@ -89,10 +92,24 @@ export class EventController {
           description,
           latitude,
           longitude,
-          imageUrl,
+          imageUrl, // Keep for backward compatibility
           isUrgent: isUrgent || false,
           realTimeTracking: realTimeTracking || false,
           isPublic: eventIsPublic,
+          // Create media records if provided
+          ...(media && media.length > 0 && {
+            media: {
+              createMany: {
+                data: media.map((m: any, index: number) => ({
+                  type: m.type,
+                  url: m.url,
+                  thumbnailUrl: m.thumbnailUrl || null,
+                  duration: m.duration || null,
+                  order: m.order !== undefined ? m.order : index,
+                })),
+              },
+            },
+          }),
         },
         include: {
           device: true,
@@ -109,6 +126,9 @@ export class EventController {
               id: true,
               name: true,
             },
+          },
+          media: {
+            orderBy: { order: 'asc' },
           },
         },
       });
@@ -170,6 +190,9 @@ export class EventController {
               name: true,
             },
           },
+          media: {
+            orderBy: { order: 'asc' },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -202,6 +225,9 @@ export class EventController {
               email: true,
               imageUrl: true,
             },
+          },
+          media: {
+            orderBy: { order: 'asc' },
           },
         },
       });
@@ -251,6 +277,9 @@ export class EventController {
               email: true,
               imageUrl: true,
             },
+          },
+          media: {
+            orderBy: { order: 'asc' },
           },
         },
       });
@@ -371,6 +400,9 @@ export class EventController {
               imageUrl: true,
             },
           },
+          media: {
+            orderBy: { order: 'asc' },
+          },
           _count: {
             select: {
               reactions: true,
@@ -436,6 +468,9 @@ export class EventController {
               email: true,
               imageUrl: true,
             },
+          },
+          media: {
+            orderBy: { order: 'asc' },
           },
           _count: {
             select: {
@@ -599,6 +634,248 @@ export class EventController {
     } catch (error) {
       console.error('Error fetching event positions:', error);
       res.status(500).json({ error: 'Failed to fetch event positions' });
+    }
+  }
+
+  /**
+   * Add media to an existing event
+   */
+  static async addEventMedia(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+      const { media } = req.body; // Array of {type, url, thumbnailUrl?, duration?, order}
+
+      // Verify event exists and belongs to user
+      const event = await prisma.event.findFirst({
+        where: { id, userId },
+        include: { media: true },
+      });
+
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+
+      // Check max media limit (5)
+      const currentCount = event.media.length;
+      const newCount = Array.isArray(media) ? media.length : 1;
+
+      if (currentCount + newCount > 5) {
+        return res.status(400).json({
+          error: `Maximum 5 media items allowed. Current: ${currentCount}, Adding: ${newCount}`,
+        });
+      }
+
+      // Get the highest current order
+      const maxOrder = event.media.length > 0
+        ? Math.max(...event.media.map((m) => m.order))
+        : -1;
+
+      // Create the new media records
+      const mediaItems = Array.isArray(media) ? media : [media];
+      const createdMedia = await prisma.eventMedia.createMany({
+        data: mediaItems.map((m: any, index: number) => ({
+          eventId: id,
+          type: m.type,
+          url: m.url,
+          thumbnailUrl: m.thumbnailUrl || null,
+          duration: m.duration || null,
+          order: m.order !== undefined ? m.order : maxOrder + 1 + index,
+        })),
+      });
+
+      // Return updated event with all media
+      const updatedEvent = await prisma.event.findUnique({
+        where: { id },
+        include: {
+          media: { orderBy: { order: 'asc' } },
+        },
+      });
+
+      res.json(updatedEvent);
+    } catch (error) {
+      console.error('Error adding event media:', error);
+      res.status(500).json({ error: 'Failed to add media to event' });
+    }
+  }
+
+  /**
+   * Remove a single media item from an event
+   */
+  static async removeEventMedia(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id, mediaId } = req.params;
+
+      // Verify event exists and belongs to user
+      const event = await prisma.event.findFirst({
+        where: { id, userId },
+      });
+
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+
+      // Verify media belongs to event
+      const mediaItem = await prisma.eventMedia.findFirst({
+        where: { id: mediaId, eventId: id },
+      });
+
+      if (!mediaItem) {
+        return res.status(404).json({ error: 'Media not found' });
+      }
+
+      // Delete the media item
+      await prisma.eventMedia.delete({
+        where: { id: mediaId },
+      });
+
+      // Reorder remaining media to be sequential
+      const remainingMedia = await prisma.eventMedia.findMany({
+        where: { eventId: id },
+        orderBy: { order: 'asc' },
+      });
+
+      for (let i = 0; i < remainingMedia.length; i++) {
+        if (remainingMedia[i].order !== i) {
+          await prisma.eventMedia.update({
+            where: { id: remainingMedia[i].id },
+            data: { order: i },
+          });
+        }
+      }
+
+      // Return updated event
+      const updatedEvent = await prisma.event.findUnique({
+        where: { id },
+        include: {
+          media: { orderBy: { order: 'asc' } },
+        },
+      });
+
+      res.json(updatedEvent);
+    } catch (error) {
+      console.error('Error removing event media:', error);
+      res.status(500).json({ error: 'Failed to remove media from event' });
+    }
+  }
+
+  /**
+   * Reorder media items for an event
+   */
+  static async reorderEventMedia(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+      const { mediaIds } = req.body; // Array of media IDs in desired order
+
+      if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
+        return res.status(400).json({ error: 'mediaIds array is required' });
+      }
+
+      // Verify event exists and belongs to user
+      const event = await prisma.event.findFirst({
+        where: { id, userId },
+        include: { media: true },
+      });
+
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+
+      // Verify all mediaIds belong to this event
+      const eventMediaIds = event.media.map((m) => m.id);
+      const validIds = mediaIds.every((mid: string) => eventMediaIds.includes(mid));
+
+      if (!validIds || mediaIds.length !== event.media.length) {
+        return res.status(400).json({
+          error: 'Invalid mediaIds - must include all media IDs for this event',
+        });
+      }
+
+      // Update order for each media item
+      for (let i = 0; i < mediaIds.length; i++) {
+        await prisma.eventMedia.update({
+          where: { id: mediaIds[i] },
+          data: { order: i },
+        });
+      }
+
+      // Return updated event
+      const updatedEvent = await prisma.event.findUnique({
+        where: { id },
+        include: {
+          media: { orderBy: { order: 'asc' } },
+        },
+      });
+
+      res.json(updatedEvent);
+    } catch (error) {
+      console.error('Error reordering event media:', error);
+      res.status(500).json({ error: 'Failed to reorder media' });
+    }
+  }
+
+  /**
+   * Get conversations for an event (for event owner)
+   */
+  static async getEventConversations(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId!;
+      const { id } = req.params;
+
+      // Verify event exists and belongs to user
+      const event = await prisma.event.findFirst({
+        where: { id, userId },
+      });
+
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+
+      // Get all conversations for this event
+      const conversations = await prisma.conversation.findMany({
+        where: { eventId: id },
+        include: {
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: { lastMessageAt: 'desc' },
+      });
+
+      // Format response with other user info and unread count
+      const formattedConversations = conversations.map((conv) => {
+        const otherParticipant = conv.participants.find((p) => p.userId !== userId);
+        const userParticipant = conv.participants.find((p) => p.userId === userId);
+
+        return {
+          id: conv.id,
+          eventId: conv.eventId,
+          otherUser: otherParticipant?.user || null,
+          lastMessage: conv.messages[0] || null,
+          unreadCount: userParticipant?.unreadCount || 0,
+          lastMessageAt: conv.lastMessageAt,
+        };
+      });
+
+      res.json(formattedConversations);
+    } catch (error) {
+      console.error('Error fetching event conversations:', error);
+      res.status(500).json({ error: 'Failed to fetch conversations' });
     }
   }
 }

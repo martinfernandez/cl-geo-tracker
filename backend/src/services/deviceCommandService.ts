@@ -149,13 +149,13 @@ export async function setDeviceInterval(
 }
 
 /**
- * Update device interval based on event status
- * Called when events are created or closed
+ * Update device interval based on event status and lock state
+ * Called when events are created/closed or device is unlocked
  * @param deviceId - Database device ID
  */
 export async function updateDeviceIntervalBasedOnEvents(deviceId: string): Promise<void> {
   try {
-    // Get device with its configured intervals
+    // Get device with its configured intervals and lock state
     const device = await prisma.device.findUnique({
       where: { id: deviceId },
       select: {
@@ -164,6 +164,7 @@ export async function updateDeviceIntervalBasedOnEvents(deviceId: string): Promi
         activeInterval: true,
         idleInterval: true,
         currentInterval: true,
+        isLocked: true,
       },
     });
 
@@ -181,8 +182,11 @@ export async function updateDeviceIntervalBasedOnEvents(deviceId: string): Promi
       },
     });
 
-    // Determine target interval - only use active interval if there are real-time tracking events
-    const targetInterval = activeRealTimeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    // Use active interval if device is locked OR has real-time tracking events
+    // This ensures quick motion detection when device is locked
+    const targetInterval = (device.isLocked || activeRealTimeEventCount > 0)
+      ? device.activeInterval
+      : device.idleInterval;
 
     // Only send command if interval needs to change
     if (device.currentInterval !== targetInterval) {
@@ -221,6 +225,7 @@ export async function onDeviceConnected(imei: string): Promise<void> {
         idleInterval: true,
         currentInterval: true,
         isConfigured: true,
+        isLocked: true,
       },
     });
 
@@ -244,7 +249,10 @@ export async function onDeviceConnected(imei: string): Promise<void> {
       },
     });
 
-    const targetInterval = activeRealTimeEventCount > 0 ? device.activeInterval : device.idleInterval;
+    // Use active interval if device is locked OR has real-time tracking events
+    const targetInterval = (device.isLocked || activeRealTimeEventCount > 0)
+      ? device.activeInterval
+      : device.idleInterval;
     const isFirstTimeConfig = !device.isConfigured;
 
     // Small delay to ensure device is fully initialized

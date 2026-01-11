@@ -139,7 +139,8 @@ model Event {
   isPublic         Boolean        @default(true)
   isUrgent         Boolean        @default(false)
   realTimeTracking Boolean        @default(false)
-  imageUrl         String?
+  imageUrl         String?        // DEPRECATED: Kept for backward compatibility
+  media            EventMedia[]   // Multiple media items (images + videos)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   reactions        Reaction[]
@@ -168,6 +169,26 @@ enum EventType {
 enum EventStatus {
   IN_PROGRESS
   CLOSED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model EventMedia {
+  id           String    @id @default(uuid())
+  eventId      String
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type         MediaType
+  url          String    // S3/local URL for the media file
+  thumbnailUrl String?   // For videos: auto-generated thumbnail
+  order        Int       // Position in carousel (0-indexed)
+  duration     Float?    // For videos: duration in seconds (max 15)
+  createdAt    DateTime  @default(now())
+
+  @@index([eventId])
+  @@index([eventId, order])
 }
 
 model Reaction {
@@ -226,12 +247,14 @@ model Notification {
   commentId  String?
   areaId     String?
   chatId     String?          // For found object chats
+  deviceId   String?          // For device movement alerts
   content    String
   isRead     Boolean          @default(false)
   createdAt  DateTime         @default(now())
 
   @@index([receiverId, isRead])
   @@index([createdAt])
+  @@index([deviceId])
 }
 
 enum NotificationType {

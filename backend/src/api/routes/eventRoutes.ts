@@ -15,3 +15,9 @@ eventRouter.get('/:id/positions', EventController.getEventPositions);
 eventRouter.get('/:id', EventController.getEvent);
 eventRouter.put('/:id', EventController.updateEvent);
 eventRouter.delete('/:id', EventController.deleteEvent);
+
+// Event Media routes
+eventRouter.post('/:id/media', EventController.addEventMedia);
+eventRouter.delete('/:id/media/:mediaId', EventController.removeEventMedia);
+eventRouter.put('/:id/media/reorder', EventController.reorderEventMedia);
+eventRouter.get('/:id/conversations', EventController.getEventConversations);

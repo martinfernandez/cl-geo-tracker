@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Image,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Animated,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -27,6 +27,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { processImageForUpload } from '../utils/imageUtils';
 import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
+import { MediaPicker, LocalMediaItem } from '../components/MediaPicker';
+import { MediaCarousel, MediaItem } from '../components/MediaCarousel';
 
 type RouteParams = {
   AddEvent: {
@@ -86,7 +88,7 @@ export default function AddEventScreen({ navigation }: Props) {
   // Form state - GENERAL preselected
   const [eventType, setEventType] = useState('GENERAL');
   const [description, setDescription] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<LocalMediaItem[]>([]);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
@@ -113,7 +115,7 @@ export default function AddEventScreen({ navigation }: Props) {
       setCurrentStep(0);
       setEventType('GENERAL');
       setDescription('');
-      setImageUri(null);
+      setSelectedMedia([]);
       setLocation(null);
       // Only reset device selection if not preselected
       if (!preselectedDeviceId) {
@@ -346,32 +348,6 @@ export default function AddEventScreen({ navigation }: Props) {
     setShowMapPicker(false);
   };
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
-  const takePhoto = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
   const handleSubmit = async () => {
     if (!location) {
       showError('Esperando ubicacion...');
@@ -380,21 +356,45 @@ export default function AddEventScreen({ navigation }: Props) {
 
     setLoading(true);
     try {
-      let imageUrl;
-      if (imageUri) {
-        console.log('[AddEvent] Uploading image...');
-        try {
-          // Resize image before upload (1200x1200 for event feed images)
-          const processed = await processImageForUpload(imageUri, 'EVENT');
-          console.log('[AddEvent] Image resized:', processed.width, 'x', processed.height);
+      // Upload media files
+      let mediaData: Array<{ type: 'IMAGE' | 'VIDEO'; url: string; thumbnailUrl?: string; duration?: number }> = [];
+      let imageUrl: string | undefined;
 
-          imageUrl = await eventApi.uploadImage(processed.uri);
-          console.log('[AddEvent] Image uploaded:', imageUrl);
+      if (selectedMedia.length > 0) {
+        console.log('[AddEvent] Uploading media files:', selectedMedia.length);
+        try {
+          // Process and upload each media item
+          for (const item of selectedMedia) {
+            if (item.type === 'IMAGE') {
+              // Resize image before upload
+              const processed = await processImageForUpload(item.uri, 'EVENT');
+              console.log('[AddEvent] Image resized:', processed.width, 'x', processed.height);
+              const uploaded = await eventApi.uploadMedia(processed.uri, 'IMAGE');
+              mediaData.push({
+                type: 'IMAGE',
+                url: uploaded.url,
+              });
+              // Use first image as imageUrl for backward compatibility
+              if (!imageUrl) {
+                imageUrl = uploaded.url;
+              }
+            } else {
+              // Upload video directly
+              const uploaded = await eventApi.uploadMedia(item.uri, 'VIDEO');
+              mediaData.push({
+                type: 'VIDEO',
+                url: uploaded.url,
+                thumbnailUrl: uploaded.thumbnailUrl,
+                duration: uploaded.duration || item.duration,
+              });
+            }
+          }
+          console.log('[AddEvent] Media uploaded:', mediaData.length, 'files');
         } catch (uploadError: any) {
-          console.error('[AddEvent] Image upload failed:', uploadError);
+          console.error('[AddEvent] Media upload failed:', uploadError);
           console.error('[AddEvent] Upload error response:', uploadError.response?.data);
-          // Continue without image if upload fails
-          imageUrl = undefined;
+          // Continue without media if upload fails
+          mediaData = [];
         }
       }
 
@@ -404,6 +404,7 @@ export default function AddEventScreen({ navigation }: Props) {
         latitude: location.latitude,
         longitude: location.longitude,
         imageUrl,
+        media: mediaData.length > 0 ? mediaData : undefined,
         isUrgent,
       };
 
@@ -697,31 +698,14 @@ export default function AddEventScreen({ navigation }: Props) {
         </View>
       </View>
 
-      {/* Photo */}
+      {/* Media (Photos & Videos) */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Foto (opcional)</Text>
-        {imageUri ? (
-          <View style={styles.imagePreview}>
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            <TouchableOpacity
-              style={styles.removeImageBtn}
-              onPress={() => setImageUri(null)}
-            >
-              <Ionicons name="close" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.photoButtons}>
-            <TouchableOpacity style={[styles.photoBtn, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]} onPress={takePhoto}>
-              <Ionicons name="camera-outline" size={24} color={theme.text} />
-              <Text style={[styles.photoBtnText, { color: theme.text }]}>Camara</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.photoBtn, { backgroundColor: theme.surface, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }]} onPress={pickImage}>
-              <Ionicons name="images-outline" size={24} color={theme.text} />
-              <Text style={[styles.photoBtnText, { color: theme.text }]}>Galeria</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <MediaPicker
+          selectedMedia={selectedMedia}
+          onMediaChange={setSelectedMedia}
+          maxItems={5}
+          maxVideoDuration={15}
+        />
       </View>
 
       {/* Group (if available) */}
@@ -871,11 +855,19 @@ export default function AddEventScreen({ navigation }: Props) {
             </View>
           </View>
 
-          {/* Image Preview - Full width like EventDetailScreen */}
-          {imageUri && (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.previewEventImageFullWidth}
+          {/* Media Preview - Carousel */}
+          {selectedMedia.length > 0 && (
+            <MediaCarousel
+              media={selectedMedia.map((item, index) => ({
+                id: `preview-${index}`,
+                type: item.type,
+                url: item.uri,
+                order: index,
+                duration: item.duration,
+              }))}
+              height={250}
+              showIndicators={selectedMedia.length > 1}
+              compact={false}
             />
           )}
 
@@ -1639,12 +1631,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
     paddingHorizontal: 4,
-  },
-  trackingInfoText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#34C759',
-    lineHeight: 18,
   },
   // Device Location Status Styles
   deviceLocationStatus: {

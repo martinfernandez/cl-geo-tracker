@@ -146,17 +146,27 @@ export const positionApi = {
   },
 };
 
+export interface EventMedia {
+  id: string;
+  type: 'IMAGE' | 'VIDEO';
+  url: string;
+  thumbnailUrl?: string | null;
+  order: number;
+  duration?: number | null;
+}
+
 export interface Event {
   id: string;
   deviceId: string;
   userId: string;
   groupId?: string;
-  type: 'THEFT' | 'LOST' | 'ACCIDENT' | 'FIRE';
+  type: 'THEFT' | 'LOST' | 'ACCIDENT' | 'FIRE' | 'GENERAL';
   description: string;
   latitude: number;
   longitude: number;
   status: 'IN_PROGRESS' | 'CLOSED';
   imageUrl?: string;
+  media?: EventMedia[];
   createdAt: string;
   updatedAt: string;
   device: any;
@@ -246,6 +256,68 @@ export const eventApi = {
       throw error;
     }
   },
+  // Media upload methods
+  uploadMedia: async (uri: string, type: 'IMAGE' | 'VIDEO'): Promise<{ url: string; thumbnailUrl?: string; duration?: number }> => {
+    console.log('[Upload] Starting media upload:', type);
+
+    const formData = new FormData();
+    const isVideo = type === 'VIDEO';
+    const extension = isVideo ? 'mp4' : 'jpg';
+    const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
+
+    formData.append('media', {
+      uri,
+      type: mimeType,
+      name: `media.${extension}`,
+    } as any);
+
+    const response = await api.post('/upload/media', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 120000, // 2 minutes for video uploads
+    });
+
+    return response.data;
+  },
+  uploadMultipleMedia: async (items: Array<{ uri: string; type: 'IMAGE' | 'VIDEO' }>): Promise<Array<{ url: string; thumbnailUrl?: string; duration?: number; type: 'IMAGE' | 'VIDEO' }>> => {
+    console.log('[Upload] Starting multiple media upload:', items.length, 'items');
+
+    const formData = new FormData();
+
+    items.forEach((item, index) => {
+      const isVideo = item.type === 'VIDEO';
+      const extension = isVideo ? 'mp4' : 'jpg';
+      const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
+
+      formData.append('media', {
+        uri: item.uri,
+        type: mimeType,
+        name: `media-${index}.${extension}`,
+      } as any);
+    });
+
+    const response = await api.post('/upload/media/multiple', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 300000, // 5 minutes for multiple uploads
+    });
+
+    return response.data.files;
+  },
+  // Event media management
+  addMedia: async (eventId: string, mediaItems: Array<{ type: 'IMAGE' | 'VIDEO'; url: string; thumbnailUrl?: string; duration?: number }>) => {
+    const response = await api.post(`/events/${eventId}/media`, { media: mediaItems });
+    return response.data;
+  },
+  removeMedia: async (eventId: string, mediaId: string) => {
+    await api.delete(`/events/${eventId}/media/${mediaId}`);
+  },
+  reorderMedia: async (eventId: string, mediaIds: string[]) => {
+    const response = await api.put(`/events/${eventId}/media/reorder`, { mediaIds });
+    return response.data;
+  },
 };
 
 export const reactionApi = {
@@ -315,13 +387,14 @@ export const commentApi = {
 
 export interface Notification {
   id: string;
-  type: 'EVENT_REACTION' | 'EVENT_COMMENT' | 'COMMENT_REPLY' | 'AREA_JOIN_REQUEST' | 'AREA_JOIN_ACCEPTED' | 'AREA_INVITATION' | 'FOUND_OBJECT' | 'FOUND_OBJECT_MESSAGE';
+  type: 'EVENT_REACTION' | 'EVENT_COMMENT' | 'COMMENT_REPLY' | 'AREA_JOIN_REQUEST' | 'AREA_JOIN_ACCEPTED' | 'AREA_INVITATION' | 'FOUND_OBJECT' | 'FOUND_OBJECT_MESSAGE' | 'DEVICE_MOVEMENT_ALERT';
   senderId?: string;
   receiverId: string;
   eventId?: string;
   commentId?: string;
   areaId?: string;
   chatId?: string;
+  deviceId?: string;
   content: string;
   isRead: boolean;
   createdAt: string;

@@ -9,8 +9,19 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
-  Image,
+  Modal,
+  Pressable,
+  StatusBar,
 } from 'react-native';
+import { Image } from 'expo-image';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
@@ -22,7 +33,7 @@ import { wsService } from '../services/websocket';
 import { useTheme } from '../contexts/ThemeContext';
 import UserAvatar from '../components/UserAvatar';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type RootStackParamList = {
   Chat: {
@@ -96,6 +107,7 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [participantCount, setParticipantCount] = useState(0);
   const [isSelfConversation, setIsSelfConversation] = useState(false);
+  const [showImageViewer, setShowImageViewer] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -337,29 +349,35 @@ export default function ChatScreen() {
           </View>
         ) : (
           // 1-to-1 chat header
-          <TouchableOpacity
-            style={styles.headerCenter}
-            onPress={() =>
-              navigation.navigate('UserProfile' as never, { userId: otherUserId } as never)
-            }
-          >
-            <View style={{ marginRight: 10 }}>
+          <View style={styles.headerCenter}>
+            {/* Avatar - tap to view full image */}
+            <TouchableOpacity
+              style={{ marginRight: 10 }}
+              onPress={() => otherUserImage && setShowImageViewer(true)}
+              activeOpacity={otherUserImage ? 0.7 : 1}
+            >
               <UserAvatar
                 imageUrl={otherUserImage}
                 name={otherUserName}
                 size={36}
                 backgroundColor={theme.primary.main}
               />
-            </View>
-            <View style={styles.headerTextContainer}>
+            </TouchableOpacity>
+            {/* Name/Info - tap to view profile */}
+            <TouchableOpacity
+              style={styles.headerTextContainer}
+              onPress={() =>
+                navigation.navigate('UserProfile' as never, { userId: otherUserId } as never)
+              }
+            >
               <Text style={[styles.headerTitle, { color: theme.text }]}>{otherUserName}</Text>
               {conversation?.event && (
                 <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
                   {conversation.event.description}
                 </Text>
               )}
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         )}
 
         <View style={styles.backButton} />
@@ -394,6 +412,52 @@ export default function ChatScreen() {
         onTypingStart={handleTypingStart}
         onTypingStop={handleTypingStop}
       />
+
+      {/* Profile Image Viewer Modal - WhatsApp style */}
+      <Modal
+        visible={showImageViewer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImageViewer(false)}
+        statusBarTranslucent
+      >
+        <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.95)" />
+        <Pressable
+          style={styles.imageViewerContainer}
+          onPress={() => setShowImageViewer(false)}
+        >
+          {/* Header */}
+          <View style={styles.imageViewerHeader}>
+            <TouchableOpacity
+              style={styles.imageViewerCloseBtn}
+              onPress={() => setShowImageViewer(false)}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.imageViewerHeaderInfo}>
+              <Text style={styles.imageViewerName}>{otherUserName}</Text>
+              <Text style={styles.imageViewerSubtitle}>Foto de perfil</Text>
+            </View>
+          </View>
+
+          {/* Image */}
+          <View style={styles.imageViewerContent}>
+            {otherUserImage && (
+              <Image
+                source={{ uri: otherUserImage }}
+                style={styles.imageViewerImage}
+                contentFit="contain"
+                transition={200}
+              />
+            )}
+          </View>
+
+          {/* Footer hint */}
+          <View style={styles.imageViewerFooter}>
+            <Text style={styles.imageViewerHint}>Toca para cerrar</Text>
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -486,5 +550,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
     lineHeight: 22,
+  },
+  // Image Viewer Modal Styles - WhatsApp style
+  imageViewerContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'space-between',
+  },
+  imageViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  imageViewerCloseBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageViewerHeaderInfo: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  imageViewerName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  imageViewerSubtitle: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  imageViewerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_WIDTH,
+    maxHeight: SCREEN_HEIGHT * 0.6,
+  },
+  imageViewerFooter: {
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  imageViewerHint: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 13,
   },
 });

@@ -54,7 +54,9 @@ export default function NotificationsListScreen({ navigation }: any) {
       }
 
       // Navigate to relevant screen based on notification type
-      if (notification.areaId) {
+      if (notification.type === 'DEVICE_MOVEMENT_ALERT' && notification.deviceId) {
+        navigation.navigate('DeviceDetail', { deviceId: notification.deviceId });
+      } else if (notification.areaId) {
         navigation.navigate('AreaDetail', { areaId: notification.areaId });
       } else if (notification.eventId) {
         navigation.navigate('EventDetail', { eventId: notification.eventId });
@@ -103,6 +105,8 @@ export default function NotificationsListScreen({ navigation }: any) {
       case 'FOUND_OBJECT':
       case 'FOUND_OBJECT_MESSAGE':
         return 'locate';
+      case 'DEVICE_MOVEMENT_ALERT':
+        return 'warning';
       default:
         return 'notifications';
     }

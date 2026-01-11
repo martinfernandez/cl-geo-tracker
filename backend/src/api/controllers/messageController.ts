@@ -378,19 +378,43 @@ export class MessageController {
         },
       });
 
-      // Format response
-      const conversations = participants.map((p) => ({
-        id: p.conversation.id,
-        eventId: p.conversation.eventId,
-        event: p.conversation.event,
-        isGroupChat: p.conversation.isGroupChat,
-        groupId: p.conversation.groupId,
-        group: p.conversation.group,
-        otherUser: p.conversation.isGroupChat ? null : p.conversation.participants[0]?.user,
-        participants: p.conversation.isGroupChat ? p.conversation.participants.map(part => part.user) : undefined,
-        lastMessage: p.conversation.messages[0],
-        unreadCount: p.unreadCount,
-        lastMessageAt: p.conversation.lastMessageAt,
+      // Format response - handle self-conversations properly
+      const conversations = await Promise.all(participants.map(async (p) => {
+        let otherUser = null;
+
+        if (!p.conversation.isGroupChat) {
+          // Try to get the other user first
+          otherUser = p.conversation.participants[0]?.user;
+
+          // If no other user found, this might be a self-conversation
+          // Fetch the current user's info for display
+          if (!otherUser) {
+            const selfUser = await prisma.user.findUnique({
+              where: { id: userId },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                imageUrl: true,
+              },
+            });
+            otherUser = selfUser;
+          }
+        }
+
+        return {
+          id: p.conversation.id,
+          eventId: p.conversation.eventId,
+          event: p.conversation.event,
+          isGroupChat: p.conversation.isGroupChat,
+          groupId: p.conversation.groupId,
+          group: p.conversation.group,
+          otherUser,
+          participants: p.conversation.isGroupChat ? p.conversation.participants.map(part => part.user) : undefined,
+          lastMessage: p.conversation.messages[0],
+          unreadCount: p.unreadCount,
+          lastMessageAt: p.conversation.lastMessageAt,
+        };
       }));
 
       res.json(conversations);
@@ -421,6 +445,7 @@ export class MessageController {
             select: {
               id: true,
               name: true,
+              imageUrl: true,
             },
           },
           participants: {
@@ -430,6 +455,7 @@ export class MessageController {
                   id: true,
                   name: true,
                   email: true,
+                  imageUrl: true,
                 },
               },
             },

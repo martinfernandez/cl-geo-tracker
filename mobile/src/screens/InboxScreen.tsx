@@ -427,7 +427,7 @@ const SwipeableConversation = ({ item, onPress, onDelete, onLeaveGroup, theme, i
                 )}
               </View>
 
-              {lastMessageText && (
+              {lastMessageText ? (
                 <Text
                   style={[
                     styles.lastMessage,
@@ -438,15 +438,27 @@ const SwipeableConversation = ({ item, onPress, onDelete, onLeaveGroup, theme, i
                 >
                   {lastMessageText}
                 </Text>
-              )}
+              ) : isGroup ? (
+                <View style={styles.emptyGroupRow}>
+                  <Text style={[styles.emptyGroupText, { color: theme.textTertiary }]}>
+                    Sin mensajes aún
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
-          {hasUnread && (
+          {/* Right side: unread badge or CTA for empty groups */}
+          {hasUnread ? (
             <View style={styles.conversationRight}>
               <UnreadBadge count={item.unreadCount} size="small" />
             </View>
-          )}
+          ) : isGroup && !lastMessageText ? (
+            <View style={[styles.startChatCta, { backgroundColor: theme.success.subtle }]}>
+              <Ionicons name="chatbubble-outline" size={12} color={theme.success.main} />
+              <Text style={[styles.startChatText, { color: theme.success.main }]}>Saludar</Text>
+            </View>
+          ) : null}
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -1046,6 +1058,27 @@ const styles = StyleSheet.create({
   },
   conversationRight: {
     marginLeft: 8,
+  },
+  emptyGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emptyGroupText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  startChatCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  startChatText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   emptyState: {
     flex: 1,

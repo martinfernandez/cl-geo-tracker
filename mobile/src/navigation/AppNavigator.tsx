@@ -40,6 +40,7 @@ import { AddTaggedObjectScreen } from '../screens/AddTaggedObjectScreen';
 import { DeviceQRScreen } from '../screens/DeviceQRScreen';
 import { FoundChatsScreen } from '../screens/FoundChatsScreen';
 import { FoundChatScreen } from '../screens/FoundChatScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createStackNavigator();
@@ -489,6 +490,14 @@ function RootStackNavigator() {
       <RootStack.Screen
         name="FoundChat"
         component={FoundChatScreen}
+        options={{
+          presentation: 'card',
+          headerShown: false
+        }}
+      />
+      <RootStack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
         options={{
           presentation: 'card',
           headerShown: false

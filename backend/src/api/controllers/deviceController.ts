@@ -195,7 +195,10 @@ export class DeviceController {
       // Check if device exists and is owned by user
       const existingDevice = await prisma.device.findFirst({
         where: { id, userId },
-        include: {
+        select: {
+          id: true,
+          imei: true,
+          activeInterval: true,
           positions: {
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -231,6 +234,12 @@ export class DeviceController {
         },
       });
 
+      // When device is locked, switch to faster reporting interval for quick motion detection
+      if (existingDevice.imei) {
+        console.log(`[DeviceController] Device ${existingDevice.imei} locked, switching to active interval for faster motion detection`);
+        await setDeviceInterval(id, existingDevice.activeInterval);
+      }
+
       res.json(device);
     } catch (error) {
       console.error('Error locking device:', error);
@@ -247,6 +256,10 @@ export class DeviceController {
       // Check if device exists and is owned by user
       const existingDevice = await prisma.device.findFirst({
         where: { id, userId },
+        select: {
+          id: true,
+          imei: true,
+        },
       });
 
       if (!existingDevice) {
@@ -270,6 +283,13 @@ export class DeviceController {
           },
         },
       });
+
+      // When device is unlocked, restore interval based on active events
+      if (existingDevice.imei) {
+        console.log(`[DeviceController] Device ${existingDevice.imei} unlocked, restoring interval based on active events`);
+        const { updateDeviceIntervalBasedOnEvents } = await import('../../services/deviceCommandService');
+        await updateDeviceIntervalBasedOnEvents(id);
+      }
 
       res.json(device);
     } catch (error) {

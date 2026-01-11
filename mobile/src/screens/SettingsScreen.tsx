@@ -10,10 +10,14 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Linking,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
 import { processImageForUpload } from '../utils/imageUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { useOnboarding, UserProfileType, TutorialType } from '../contexts/OnboardingContext';
@@ -67,6 +71,7 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
   const [areaOfInterest, setAreaOfInterest] = useState<{
     latitude: number;
     longitude: number;
@@ -219,6 +224,27 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleOpenHelp = () => {
+    Alert.alert(
+      'Ayuda',
+      'Elige una opcion',
+      [
+        {
+          text: 'Contactar soporte',
+          onPress: () => Linking.openURL('mailto:soporte@peekapp.com?subject=Ayuda%20PeeK%20App'),
+        },
+        {
+          text: 'Preguntas frecuentes',
+          onPress: () => Linking.openURL('https://peekapp.com/faq'),
+        },
+        { text: 'Cancelar', style: 'cancel' },
+      ]
+    );
+  };
+
+  const appVersion = Constants.expoConfig?.version || '1.0.0';
+  const buildNumber = Constants.expoConfig?.ios?.buildNumber || Constants.expoConfig?.android?.versionCode || '1';
+
   const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'U';
 
   return (
@@ -260,7 +286,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>Cuenta</Text>
           <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: theme.border }]}
+              onPress={() => navigation.navigate('EditProfile')}
+            >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.accent.subtle }]}>
                   <Ionicons name="person-outline" size={20} color={theme.accent.main} />
@@ -275,18 +304,16 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomWidth: 0 }]}
-              onPress={() => setShowAreaPicker(true)}
+              onPress={() => navigation.navigate('AreasList')}
             >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.info.subtle }]}>
                   <Ionicons name="location-outline" size={20} color={theme.info.main} />
                 </View>
                 <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Area de interes</Text>
+                  <Text style={[styles.menuItemTitle, { color: theme.text }]}>Mis areas de interes</Text>
                   <Text style={[styles.menuItemSubtitle, { color: theme.textTertiary }]}>
-                    {areaOfInterest
-                      ? `Radio: ${(areaOfInterest.radius / 1000).toFixed(1)} km`
-                      : 'No configurada'}
+                    Administrar areas y solicitudes
                   </Text>
                 </View>
               </View>
@@ -419,7 +446,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>General</Text>
           <View style={[styles.sectionCard, { backgroundColor: theme.surface }]}>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: theme.border }]}
+              onPress={() => navigation.navigate('NotificationsList')}
+            >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.warning.subtle }]}>
                   <Ionicons name="notifications-outline" size={20} color={theme.warning.dark} />
@@ -432,7 +462,10 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.menuItem, { borderBottomColor: theme.border }]}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: theme.border }]}
+              onPress={handleOpenHelp}
+            >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.primary.subtle }]}>
                   <Ionicons name="help-circle-outline" size={20} color={theme.primary.main} />
@@ -445,7 +478,10 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={20} color={theme.textDisabled} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              onPress={() => setShowAboutModal(true)}
+            >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: theme.secondary.subtle }]}>
                   <Ionicons name="information-circle-outline" size={20} color={theme.secondary.main} />
@@ -538,7 +574,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* App Version */}
-        <Text style={[styles.versionText, { color: theme.textDisabled }]}>Version 1.0.0</Text>
+        <Text style={[styles.versionText, { color: theme.textDisabled }]}>Version {appVersion} ({buildNumber})</Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -549,6 +585,82 @@ export default function SettingsScreen() {
         onSave={handleSaveArea}
         initialArea={areaOfInterest || undefined}
       />
+
+      {/* About Modal */}
+      <Modal
+        visible={showAboutModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowAboutModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowAboutModal(false)}
+        >
+          <Pressable
+            style={[styles.aboutModal, { backgroundColor: theme.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.aboutHeader}>
+              <View style={[styles.aboutIconContainer, { backgroundColor: theme.primary.subtle }]}>
+                <Ionicons name="location" size={32} color={theme.primary.main} />
+              </View>
+              <Text style={[styles.aboutTitle, { color: theme.text }]}>PeeK</Text>
+              <Text style={[styles.aboutVersion, { color: theme.textSecondary }]}>
+                Version {appVersion} ({buildNumber})
+              </Text>
+            </View>
+
+            <View style={[styles.aboutDivider, { backgroundColor: theme.border }]} />
+
+            <TouchableOpacity
+              style={styles.aboutLink}
+              onPress={() => {
+                setShowAboutModal(false);
+                Linking.openURL('https://peekapp.com/terms');
+              }}
+            >
+              <Ionicons name="document-text-outline" size={20} color={theme.primary.main} />
+              <Text style={[styles.aboutLinkText, { color: theme.primary.main }]}>Terminos y condiciones</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.aboutLink}
+              onPress={() => {
+                setShowAboutModal(false);
+                Linking.openURL('https://peekapp.com/privacy');
+              }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={20} color={theme.primary.main} />
+              <Text style={[styles.aboutLinkText, { color: theme.primary.main }]}>Politica de privacidad</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.aboutLink}
+              onPress={() => {
+                setShowAboutModal(false);
+                Linking.openURL('https://peekapp.com/licenses');
+              }}
+            >
+              <Ionicons name="code-slash-outline" size={20} color={theme.primary.main} />
+              <Text style={[styles.aboutLinkText, { color: theme.primary.main }]}>Licencias de codigo abierto</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.aboutDivider, { backgroundColor: theme.border }]} />
+
+            <Text style={[styles.aboutCopyright, { color: theme.textTertiary }]}>
+              2024 PeeK. Todos los derechos reservados.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.aboutCloseButton, { backgroundColor: theme.bgSecondary }]}
+              onPress={() => setShowAboutModal(false)}
+            >
+              <Text style={[styles.aboutCloseText, { color: theme.text }]}>Cerrar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -754,5 +866,73 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  // About Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  aboutModal: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  aboutHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  aboutIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  aboutTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  aboutVersion: {
+    fontSize: 14,
+  },
+  aboutDivider: {
+    width: '100%',
+    height: 1,
+    marginVertical: 16,
+  },
+  aboutLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    width: '100%',
+  },
+  aboutLinkText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  aboutCopyright: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  aboutCloseButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  aboutCloseText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -13,15 +13,17 @@ import {
   Alert,
 } from 'react-native';
 import { SkeletonImage } from './SkeletonImage';
+import { EventMapPlaceholder } from './EventMapPlaceholder';
 import { FadeInView } from './FadeInView';
 import { Ionicons } from '@expo/vector-icons';
 import UserAvatar from './UserAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, G, Rect, Defs, Pattern } from 'react-native-svg';
-import { Event, reactionApi } from '../services/api';
+import { Event, reactionApi, EventMedia } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import { BASE_URL } from '../config/environment';
 import { colors as staticColors, radius } from '../theme/colors';
+import { MediaCarousel } from './MediaCarousel';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MINIMIZED_HEIGHT = 90; // Shows the header with title visible
@@ -470,6 +472,22 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   FIRE: '#FF2D55',
 };
 
+// Helper to detect if an imageUrl is a static map placeholder (not a real uploaded image)
+const isStaticMapUrl = (url: string | undefined | null): boolean => {
+  if (!url) return false;
+  // Detect Google Static Maps URLs or other known map placeholder patterns
+  return url.includes('maps.googleapis.com') || url.includes('staticmap');
+};
+
+// Helper to check if event has valid uploaded media (not static map placeholders)
+const hasValidMedia = (item: EventWithCounts): boolean => {
+  // If has media array with items, use that
+  if ((item as any).media && (item as any).media.length > 0) return true;
+  // If has imageUrl that's NOT a static map, use that
+  if (item.imageUrl && !isStaticMapUrl(item.imageUrl)) return true;
+  return false;
+};
+
 export default function SlidingEventFeed({
   events,
   onEventPress,
@@ -721,9 +739,26 @@ export default function SlidingEventFeed({
           </View>
         )}
 
-        {/* Image - full width */}
-        {item.imageUrl && (
-          <View style={styles.imageContainer}>
+        {/* Media or Map Placeholder */}
+        {/* DEBUG: Log event media data */}
+        {(() => { console.log(`[Feed] Event ${item.id.substring(0,8)}:`, { mediaCount: (item as any).media?.length || 0, imageUrl: item.imageUrl?.substring(0, 50), hasMedia: !!(item as any).media }); return null; })()}
+        <View style={styles.imageContainer}>
+          {(item as any).media && (item as any).media.length > 0 ? (
+            <MediaCarousel
+              media={(item as any).media.map((m: EventMedia) => ({
+                id: m.id,
+                type: m.type,
+                url: m.url,
+                thumbnailUrl: m.thumbnailUrl,
+                order: m.order,
+                duration: m.duration,
+              }))}
+              height={200}
+              showIndicators={(item as any).media.length > 1}
+              autoPlayVideos={true}
+              compact={true}
+            />
+          ) : item.imageUrl && !isStaticMapUrl(item.imageUrl) ? (
             <SkeletonImage
               source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
               style={styles.eventImage}
@@ -731,8 +766,15 @@ export default function SlidingEventFeed({
               transition={200}
               cachePolicy="memory-disk"
             />
-          </View>
-        )}
+          ) : (
+            <EventMapPlaceholder
+              latitude={item.latitude}
+              longitude={item.longitude}
+              style={styles.eventImage}
+              markerColor={EVENT_TYPE_COLORS[item.type]}
+            />
+          )}
+        </View>
 
         {/* Card content */}
         <View style={styles.cardContent}>

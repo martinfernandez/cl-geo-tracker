@@ -1,14 +1,27 @@
 import { GPSData, DeviceStatusData } from '../types';
 
 // GT06 protocol battery level mapping (from raw value to percentage)
+// Note: Most GT06 devices report only 7 levels (0-6), so percentages are approximate
 const BATTERY_LEVEL_MAP: { [key: number]: number } = {
   0: 0,    // No power (shutdown)
-  1: 5,    // Extremely low
-  2: 15,   // Very low
-  3: 35,   // Low
-  4: 65,   // Medium
-  5: 90,   // High
+  1: 10,   // Extremely low
+  2: 25,   // Very low
+  3: 40,   // Low
+  4: 60,   // Medium-low
+  5: 80,   // Medium-high
   6: 100,  // Full
+};
+
+// When charging, we adjust battery levels upward since the device
+// typically reports lower values while charging
+const BATTERY_LEVEL_CHARGING_MAP: { [key: number]: number } = {
+  0: 10,   // Charging from empty
+  1: 25,   // Charging
+  2: 40,   // Charging
+  3: 55,   // Charging
+  4: 75,   // Charging (almost full)
+  5: 95,   // Charging (nearly full)
+  6: 100,  // Full/Charged
 };
 
 // GSM signal mapping (from raw value to percentage)
@@ -99,7 +112,10 @@ export class GPS103Parser {
       // Use voltage level if terminal info shows 0 (some devices report voltage separately)
       // Voltage level: 0=lowest, 6=highest, map to percentage
       const effectiveBatteryRaw = batteryRaw > 0 ? batteryRaw : voltageLevel;
-      const batteryLevel = BATTERY_LEVEL_MAP[effectiveBatteryRaw] ?? 0;
+
+      // Use different mapping when charging - devices often report lower values while charging
+      const batteryMap = isCharging ? BATTERY_LEVEL_CHARGING_MAP : BATTERY_LEVEL_MAP;
+      const batteryLevel = batteryMap[effectiveBatteryRaw] ?? 0;
       const gsmSignal = GSM_SIGNAL_MAP[gsmRaw] ?? 0;
 
       console.log(`Parsed GPS103 status (0x${protocolNumber.toString(16)}):`, {

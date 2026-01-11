@@ -13,6 +13,10 @@ const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 // Maximum allowed time difference (24 hours) between device and server time
 const MAX_TIMESTAMP_DRIFT_MS = 24 * 60 * 60 * 1000;
 
+// Maximum allowed distance jump between consecutive positions (500km)
+// Positions with jumps larger than this are considered GPS errors
+const MAX_POSITION_JUMP_METERS = 500 * 1000; // 500km in meters
+
 /**
  * Validate GPS timestamp and return corrected timestamp if device clock is wrong
  * Many GPS devices have incorrect internal clocks, so we use server time when
@@ -28,6 +32,68 @@ function validateTimestamp(deviceTimestamp: Date): Date {
   }
 
   return deviceTimestamp;
+}
+
+/**
+ * Validate GPS coordinates are within valid ranges
+ * @returns true if coordinates are valid, false otherwise
+ */
+function validateCoordinateRange(latitude: number, longitude: number): boolean {
+  // Latitude must be between -90 and 90
+  if (latitude < -90 || latitude > 90) {
+    console.log(`[GPS VALIDATION] Invalid latitude: ${latitude} (must be -90 to 90)`);
+    return false;
+  }
+  // Longitude must be between -180 and 180
+  if (longitude < -180 || longitude > 180) {
+    console.log(`[GPS VALIDATION] Invalid longitude: ${longitude} (must be -180 to 180)`);
+    return false;
+  }
+  // Check for null island (0, 0) which often indicates GPS error
+  if (latitude === 0 && longitude === 0) {
+    console.log(`[GPS VALIDATION] Null island coordinates (0, 0) detected - likely GPS error`);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Check if position jump from last known position is within acceptable range
+ * @returns object with isValid flag and distance in meters
+ */
+async function validatePositionJump(
+  deviceId: string,
+  newLatitude: number,
+  newLongitude: number
+): Promise<{ isValid: boolean; distance: number | null; lastPosition: any | null }> {
+  // Get the last known valid position for this device
+  const lastPosition = await prisma.position.findFirst({
+    where: { deviceId },
+    orderBy: { timestamp: 'desc' },
+  });
+
+  // If no previous position, this is the first one - accept it
+  if (!lastPosition) {
+    return { isValid: true, distance: null, lastPosition: null };
+  }
+
+  // Calculate distance from last position
+  const distance = calculateDistance(
+    lastPosition.latitude,
+    lastPosition.longitude,
+    newLatitude,
+    newLongitude
+  );
+
+  // Check if jump is too large (> 500km)
+  if (distance > MAX_POSITION_JUMP_METERS) {
+    console.log(`[GPS VALIDATION] Position jump too large for device ${deviceId}: ${(distance / 1000).toFixed(1)}km > ${MAX_POSITION_JUMP_METERS / 1000}km threshold`);
+    console.log(`[GPS VALIDATION] Last position: (${lastPosition.latitude}, ${lastPosition.longitude})`);
+    console.log(`[GPS VALIDATION] New position: (${newLatitude}, ${newLongitude})`);
+    return { isValid: false, distance, lastPosition };
+  }
+
+  return { isValid: true, distance, lastPosition };
 }
 
 /**
@@ -134,11 +200,12 @@ async function checkDeviceLockViolation(
     distance
   );
 
-  // Create notification record
+  // Create notification record with deviceId for navigation
   await prisma.notification.create({
     data: {
       type: 'DEVICE_MOVEMENT_ALERT',
       receiverId: device.userId,
+      deviceId: device.id,
       content: `${device.name || `JX10-${device.imei.slice(-4)}`} se ha movido ${distance.toFixed(0)}m de su posición bloqueada`,
     },
   });
@@ -241,6 +308,15 @@ export function startTcpServer() {
           const gpsData = GPS103Parser.parse(packet, imei);
 
           if (gpsData) {
+            // VALIDATION 1: Check coordinate ranges
+            if (!validateCoordinateRange(gpsData.latitude, gpsData.longitude)) {
+              console.log(`[GPS VALIDATION] Rejecting invalid coordinates from device ${imei}: (${gpsData.latitude}, ${gpsData.longitude})`);
+              // Still send acknowledgment to prevent device from resending
+              const serialNumber = packet.readUInt16BE(packet.length - 4);
+              socket.write(GPS103Parser.generateLocationResponse(serialNumber));
+              continue;
+            }
+
             // Find or create device
             let device = await prisma.device.findUnique({
               where: { imei: gpsData.imei },
@@ -254,6 +330,24 @@ export function startTcpServer() {
                 },
               });
               console.log(`New device registered: ${device.imei}`);
+            }
+
+            // VALIDATION 2: Check for impossible position jumps (> 500km)
+            const jumpValidation = await validatePositionJump(device.id, gpsData.latitude, gpsData.longitude);
+            if (!jumpValidation.isValid) {
+              console.log(`[GPS VALIDATION] Rejecting position with impossible jump for device ${device.imei}`);
+              // Still send acknowledgment to prevent device from resending
+              const serialNumber = packet.readUInt16BE(packet.length - 4);
+              socket.write(GPS103Parser.generateLocationResponse(serialNumber));
+
+              // Broadcast the LAST VALID position instead, so UI stays updated with good data
+              if (jumpValidation.lastPosition) {
+                broadcastPositionUpdate({
+                  device,
+                  position: jumpValidation.lastPosition,
+                });
+              }
+              continue;
             }
 
             // Check for lock violation BEFORE saving position

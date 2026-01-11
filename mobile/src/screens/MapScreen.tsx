@@ -162,16 +162,19 @@ export function MapScreen({ navigation, route }: any) {
 
   // Handler for selecting a device from the modal
   const handleSelectDevice = (device: any) => {
+    setShowDevicesModal(false);
     if (device.positions && device.positions.length > 0) {
       const position = device.positions[0];
-      mapRef.current?.animateToRegion({
-        latitude: position.latitude,
-        longitude: position.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 500);
+      // Small delay to ensure modal is closed before animating
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: position.latitude,
+          longitude: position.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 500);
+      }, 100);
     }
-    setShowDevicesModal(false);
   };
 
   return (
@@ -266,36 +269,47 @@ export function MapScreen({ navigation, route }: any) {
         {/* Device Markers - Always visible for device owner */}
         {devicesWithPosition.map((device: any) => {
           const position = device.positions[0];
+          if (!position || !position.latitude || !position.longitude) return null;
+
           const deviceColor = device.color || '#007AFF';
           const deviceInitial = (device.name || device.imei || '?').charAt(0).toUpperCase();
 
           return (
             <Marker
-              key={device.id}
+              key={`device-${device.id}`}
+              identifier={`device-${device.id}`}
               coordinate={{
                 latitude: position.latitude,
                 longitude: position.longitude,
               }}
               rotation={position.heading || 0}
               anchor={{ x: 0.5, y: 0.5 }}
-              zIndex={1}
+              zIndex={10}
+              tracksViewChanges={false}
+              onCalloutPress={() => navigation.navigate('DeviceDetail', { deviceId: device.id })}
             >
-              <View style={[styles.deviceMarker, { backgroundColor: deviceColor }]}>
-                <View style={styles.deviceMarkerInner}>
-                  <Text style={[styles.deviceMarkerText, { color: deviceColor }]}>
-                    {deviceInitial}
-                  </Text>
+              <View style={styles.deviceMarkerWrapper} collapsable={false}>
+                <View style={[styles.deviceMarker, { backgroundColor: deviceColor }]}>
+                  <View style={styles.deviceMarkerInner}>
+                    <Text style={[styles.deviceMarkerText, { color: deviceColor }]}>
+                      {deviceInitial}
+                    </Text>
+                  </View>
                 </View>
               </View>
               <Callout tooltip={false}>
-                <View style={styles.compactCallout}>
+                <TouchableOpacity
+                  style={styles.compactCallout}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.compactCalloutAvatar, { backgroundColor: deviceColor }]}>
                     <Text style={styles.compactCalloutAvatarText}>{deviceInitial}</Text>
                   </View>
                   <Text style={styles.compactCalloutName} numberOfLines={1}>
                     {device.name || device.imei}
                   </Text>
-                </View>
+                  <Ionicons name="chevron-forward" size={16} color="#8E8E93" />
+                </TouchableOpacity>
               </Callout>
             </Marker>
           );
@@ -1211,6 +1225,12 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   // Device marker styles
+  deviceMarkerWrapper: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   deviceMarker: {
     width: 40,
     height: 40,
@@ -1222,6 +1242,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+    overflow: 'visible',
   },
   deviceMarkerInner: {
     width: 32,

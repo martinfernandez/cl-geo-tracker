@@ -708,17 +708,28 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Detalle del Dispositivo</Text>
-        <TouchableOpacity
-          onPress={handleRefreshLocation}
-          style={styles.headerButton}
-          disabled={refreshing}
-        >
-          {refreshing ? (
-            <ActivityIndicator size="small" color={theme.primary.main} />
-          ) : (
-            <Ionicons name="refresh" size={24} color={theme.primary.main} />
+        <View style={styles.headerRightButtons}>
+          {/* Show + button for creating events when device is NOT locked */}
+          {!device.isLocked && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('AddEvent', { deviceId: device.id })}
+              style={styles.headerButton}
+            >
+              <Ionicons name="add" size={28} color={theme.primary.main} />
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleRefreshLocation}
+            style={styles.headerButton}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={theme.primary.main} />
+            ) : (
+              <Ionicons name="refresh" size={24} color={theme.primary.main} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={[styles.scrollView, { backgroundColor: theme.bg }]}>
@@ -895,7 +906,7 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {/* Alert Section - Prominent */}
+          {/* Alert Section - Only show when device is locked OR has active alert */}
           {activeAlert ? (
             <View style={[styles.activeAlertCard, isDark && { backgroundColor: 'rgba(255, 59, 48, 0.15)', borderColor: '#FF3B30' }]}>
               <View style={styles.activeAlertHeader}>
@@ -922,10 +933,10 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
                 <Text style={styles.closeAlertButtonTextNew}>Cerrar Alerta</Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          ) : device.isLocked ? (
             <TouchableOpacity
               style={styles.createAlertCard}
-              onPress={() => navigation.navigate('AddEvent', { deviceId: device.id })}
+              onPress={() => navigation.navigate('AddEvent', { deviceId: device.id, isUrgent: true })}
               activeOpacity={0.8}
             >
               <View style={styles.createAlertContent}>
@@ -941,7 +952,7 @@ export default function DeviceDetailScreen({ navigation, route }: Props) {
                 <Ionicons name="chevron-forward" size={24} color="#fff" />
               </View>
             </TouchableOpacity>
-          )}
+          ) : null}
 
           {/* Device Info */}
           <View style={styles.section}>
@@ -1226,6 +1237,10 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 40,
+  },
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,

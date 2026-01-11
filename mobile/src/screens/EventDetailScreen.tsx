@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,19 +12,24 @@ import {
   Modal,
   Pressable,
   Keyboard,
+  Share,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { eventApi, reactionApi, commentApi, Comment, api } from '../services/api';
+import { eventApi, reactionApi, commentApi, Comment, api, EventMedia } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { UrgentPulsingDot } from '../components/UrgentPulsingDot';
 import { BASE_URL } from '../config/environment';
 import { stopBackgroundTracking } from '../services/backgroundLocation';
 import UserAvatar from '../components/UserAvatar';
+import { EventMapPlaceholder } from '../components/EventMapPlaceholder';
+import { MediaCarousel } from '../components/MediaCarousel';
+import { SkeletonImage } from '../components/SkeletonImage';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -261,6 +265,26 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleShareEvent = async () => {
+    const shareUrl = `${BASE_URL}/e/${event.id}`;
+    const eventTypeLabels: Record<string, string> = {
+      THEFT: 'Robo',
+      LOST: 'Extravio',
+      ACCIDENT: 'Accidente',
+      FIRE: 'Incendio',
+    };
+
+    const title = `🚨 ${eventTypeLabels[event.type] || 'Alerta'}: ${event.description.slice(0, 50)}${event.description.length > 50 ? '...' : ''}`;
+    const message = `${title}\n\n${shareUrl}`;
+
+    try {
+      await Share.share({ message });
+    } catch (error) {
+      console.error('Error sharing event:', error);
+      Alert.alert('Error', 'No se pudo compartir el evento');
+    }
+  };
+
   const handleSubmitComment = async () => {
     if (!commentText.trim()) return;
 
@@ -387,64 +411,88 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       <View
         key={comment.id}
         style={[
-          styles.commentContainer,
-          { backgroundColor: isDark ? '#2C2C2E' : '#fafafa', borderColor: theme.glass.border },
-          isReply && [styles.replyContainer, { backgroundColor: theme.bg }]
+          styles.igCommentContainer,
+          isReply && styles.igReplyContainer
         ]}
       >
-        <View style={styles.commentHeader}>
-          <TouchableOpacity
-            style={styles.commentUserRow}
-            onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}
-          >
-            <View style={[styles.commentAvatar, { backgroundColor: theme.primary.main }]}>
-              <Text style={styles.commentAvatarText}>{getUserInitial(comment.user.name)}</Text>
-            </View>
-            <Text style={[styles.commentAuthor, { color: theme.text }]}>{comment.user.name}</Text>
-          </TouchableOpacity>
-          <View style={styles.commentHeaderRight}>
-            <Text style={[styles.commentDate, { color: theme.textTertiary }]}>
+        {/* Avatar */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}
+          style={styles.igCommentAvatarContainer}
+        >
+          <UserAvatar
+            imageUrl={comment.user.imageUrl}
+            name={comment.user.name}
+            size={isReply ? 28 : 32}
+            backgroundColor={theme.primary.main}
+          />
+        </TouchableOpacity>
+
+        {/* Content */}
+        <View style={styles.igCommentContent}>
+          {/* Username + Comment text */}
+          <Text style={[styles.igCommentText, { color: theme.text }]}>
+            <Text
+              style={styles.igCommentUsername}
+              onPress={() => navigation.navigate('UserProfile' as never, { userId: comment.user.id } as never)}
+            >
+              {comment.user.name}
+            </Text>
+            {'  '}{comment.content}
+          </Text>
+
+          {/* Actions row */}
+          <View style={styles.igCommentActions}>
+            <Text style={[styles.igCommentTime, { color: theme.textTertiary }]}>
               {formatRelativeTime(comment.createdAt)}
             </Text>
+
+            {likeCount > 0 && (
+              <Text style={[styles.igCommentLikeCount, { color: theme.textTertiary }]}>
+                {likeCount} {likeCount === 1 ? 'Me gusta' : 'Me gusta'}
+              </Text>
+            )}
+
+            {!isReply && (
+              <TouchableOpacity onPress={() => setReplyingTo(comment.id)}>
+                <Text style={[styles.igCommentReply, { color: theme.textTertiary }]}>
+                  Responder
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {isOwnComment && (
-              <TouchableOpacity
-                onPress={() => handleDeleteComment(comment.id)}
-                style={styles.deleteButton}
-              >
-                <Ionicons name="trash-outline" size={16} color={theme.error.main} />
+              <TouchableOpacity onPress={() => handleDeleteComment(comment.id)}>
+                <Ionicons name="trash-outline" size={14} color={theme.textTertiary} />
               </TouchableOpacity>
             )}
           </View>
+
+          {/* Replies */}
+          {comment.replies && comment.replies.length > 0 && (
+            <View style={styles.igRepliesContainer}>
+              <View style={styles.igRepliesLine}>
+                <View style={[styles.igRepliesLineDash, { backgroundColor: theme.textTertiary }]} />
+                <Text style={[styles.igRepliesLabel, { color: theme.textTertiary }]}>
+                  {comment.replies.length} {comment.replies.length === 1 ? 'respuesta' : 'respuestas'}
+                </Text>
+              </View>
+              {comment.replies.map((reply) => renderComment(reply, true))}
+            </View>
+          )}
         </View>
-        <Text style={[styles.commentContent, { color: theme.text }]}>{comment.content}</Text>
-        <View style={styles.commentActions}>
-          <TouchableOpacity
-            onPress={() => setReplyingTo(comment.id)}
-            style={styles.replyButton}
-          >
-            <Text style={[styles.replyButtonText, { color: theme.primary.main }]}>Responder</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleCommentLike(comment.id)}
-            style={styles.likeButton}
-          >
-            <Ionicons
-              name={userLiked ? 'heart' : 'heart-outline'}
-              size={16}
-              color={userLiked ? '#ed4956' : theme.textTertiary}
-            />
-            {likeCount > 0 && (
-              <Text style={[styles.likeCount, { color: theme.textTertiary }, userLiked && styles.likeCountActive]}>
-                {likeCount}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        {comment.replies && comment.replies.length > 0 && (
-          <View style={styles.repliesContainer}>
-            {comment.replies.map((reply) => renderComment(reply, true))}
-          </View>
-        )}
+
+        {/* Like button (right side) */}
+        <TouchableOpacity
+          onPress={() => handleCommentLike(comment.id)}
+          style={styles.igCommentLikeBtn}
+        >
+          <Ionicons
+            name={userLiked ? 'heart' : 'heart-outline'}
+            size={isReply ? 14 : 16}
+            color={userLiked ? '#ed4956' : theme.textTertiary}
+          />
+        </TouchableOpacity>
       </View>
     );
   };
@@ -505,115 +553,167 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Map - Full width, first */}
-        <View style={styles.mapContainer}>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: event.latitude,
-              longitude: event.longitude,
-              latitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
-              longitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
-            }}
-            userInterfaceStyle={isDark ? 'dark' : 'light'}
-          >
-            <Marker
-              coordinate={{
-                latitude: event.latitude,
-                longitude: event.longitude,
-              }}
-            >
-              <View style={[styles.mapMarker, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
-                <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={16} color="#fff" />
-              </View>
-            </Marker>
+        {/* Determine if event has media */}
+        {(() => {
+          const hasMedia = (event.media && event.media.length > 0) || event.imageUrl;
 
-            {event.realTimeTracking && trackedPositions.length > 1 && (
-              <Polyline
-                coordinates={trackedPositions}
-                strokeColor="#5856D6"
-                strokeWidth={4}
-                geodesic={true}
-                lineCap="round"
-                lineJoin="round"
-              />
-            )}
-
-            {event.realTimeTracking && trackedPositions.length > 0 && (
-              <Marker
-                coordinate={trackedPositions[trackedPositions.length - 1]}
-                pinColor="#007AFF"
-                title="Posicion actual"
-              />
-            )}
-          </MapView>
-
-          {event.realTimeTracking && (
-            <View
-              style={[
-                styles.trackingIndicator,
-                event.status === 'IN_PROGRESS'
-                  ? styles.trackingIndicatorActive
-                  : styles.trackingIndicatorClosed,
-              ]}
-            >
-              <Ionicons
-                name={event.status === 'IN_PROGRESS' ? 'locate' : 'checkmark-circle'}
-                size={16}
-                color="#fff"
-              />
-              <Text style={styles.trackingIndicatorText}>
-                {event.status === 'IN_PROGRESS'
-                  ? `Rastreo activo`
-                  : `Rastreo finalizado`}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* User Header - Below map */}
-        <View style={[styles.userHeader, { backgroundColor: theme.bg }]}>
-          <TouchableOpacity
-            style={styles.userInfo}
-            onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
-          >
-            <UserAvatar
-              imageUrl={event.user.imageUrl}
-              name={event.user.name}
-              size={40}
-              backgroundColor={EVENT_TYPE_COLORS[event.type] || '#007AFF'}
-            />
-            <View style={styles.userTextContainer}>
-              <Text style={[styles.userName, { color: theme.text }]}>{event.user.name}</Text>
-              <View style={styles.userSubtitle}>
-                {event.isUrgent && <UrgentPulsingDot size="small" />}
-                <View style={[styles.typeBadgeSmall, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
-                  <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={10} color="#fff" />
-                  <Text style={styles.typeBadgeSmallText}>{EVENT_TYPE_LABELS[event.type] || 'General'}</Text>
-                </View>
-                {event.status === 'CLOSED' && (
-                  <View style={styles.closedBadge}>
-                    <Text style={styles.closedBadgeText}>Cerrado</Text>
+          // Helper component for User Header
+          const UserHeaderComponent = () => (
+            <View style={[styles.userHeader, { backgroundColor: theme.bg }]}>
+              <TouchableOpacity
+                style={styles.userInfo}
+                onPress={() => navigation.navigate('UserProfile' as never, { userId: event.user.id } as never)}
+              >
+                <UserAvatar
+                  imageUrl={event.user.imageUrl}
+                  name={event.user.name}
+                  size={40}
+                  backgroundColor={EVENT_TYPE_COLORS[event.type] || '#007AFF'}
+                />
+                <View style={styles.userTextContainer}>
+                  <Text style={[styles.userName, { color: theme.text }]}>{event.user.name}</Text>
+                  <View style={styles.userSubtitle}>
+                    {event.isUrgent && <UrgentPulsingDot size="small" />}
+                    <View style={[styles.typeBadgeSmall, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
+                      <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={10} color="#fff" />
+                      <Text style={styles.typeBadgeSmallText}>{EVENT_TYPE_LABELS[event.type] || 'General'}</Text>
+                    </View>
+                    {event.status === 'CLOSED' && (
+                      <View style={styles.closedBadge}>
+                        <Text style={styles.closedBadgeText}>Cerrado</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowUserMenu(true)}
+                style={styles.userMenuButton}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color={theme.text} />
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowUserMenu(true)}
-            style={styles.userMenuButton}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color={theme.text} />
-          </TouchableOpacity>
-        </View>
+          );
 
-        {/* Image - Full width, edge-to-edge */}
-        {event.imageUrl && (
-          <Image
-            source={{ uri: event.imageUrl.startsWith('http') ? event.imageUrl : `${BASE_URL}${event.imageUrl}` }}
-            style={styles.eventImage}
-          />
-        )}
+          // Helper component for Map
+          const MapComponent = () => (
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                initialRegion={{
+                  latitude: event.latitude,
+                  longitude: event.longitude,
+                  latitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
+                  longitudeDelta: trackedPositions.length > 0 ? 0.02 : 0.01,
+                }}
+                userInterfaceStyle={isDark ? 'dark' : 'light'}
+              >
+                <Marker
+                  coordinate={{
+                    latitude: event.latitude,
+                    longitude: event.longitude,
+                  }}
+                >
+                  <View style={[styles.mapMarker, { backgroundColor: EVENT_TYPE_COLORS[event.type] || '#007AFF' }]}>
+                    <Ionicons name={EVENT_TYPE_ICONS[event.type] as any || 'megaphone-outline'} size={16} color="#fff" />
+                  </View>
+                </Marker>
+
+                {event.realTimeTracking && trackedPositions.length > 1 && (
+                  <Polyline
+                    coordinates={trackedPositions}
+                    strokeColor="#5856D6"
+                    strokeWidth={4}
+                    geodesic={true}
+                    lineCap="round"
+                    lineJoin="round"
+                  />
+                )}
+
+                {event.realTimeTracking && trackedPositions.length > 0 && (
+                  <Marker
+                    coordinate={trackedPositions[trackedPositions.length - 1]}
+                    pinColor="#007AFF"
+                    title="Posicion actual"
+                  />
+                )}
+              </MapView>
+
+              {event.realTimeTracking && (
+                <View
+                  style={[
+                    styles.trackingIndicator,
+                    event.status === 'IN_PROGRESS'
+                      ? styles.trackingIndicatorActive
+                      : styles.trackingIndicatorClosed,
+                  ]}
+                >
+                  <Ionicons
+                    name={event.status === 'IN_PROGRESS' ? 'locate' : 'checkmark-circle'}
+                    size={16}
+                    color="#fff"
+                  />
+                  <Text style={styles.trackingIndicatorText}>
+                    {event.status === 'IN_PROGRESS'
+                      ? `Rastreo activo`
+                      : `Rastreo finalizado`}
+                  </Text>
+                </View>
+              )}
+            </View>
+          );
+
+          // Helper component for Media
+          const MediaComponent = () => {
+            if (event.media && event.media.length > 0) {
+              return (
+                <MediaCarousel
+                  media={event.media.map((m: EventMedia) => ({
+                    id: m.id,
+                    type: m.type,
+                    url: m.url,
+                    thumbnailUrl: m.thumbnailUrl,
+                    order: m.order,
+                    duration: m.duration,
+                  }))}
+                  height={350}
+                  showIndicators={true}
+                  autoPlayVideos={false}
+                />
+              );
+            } else if (event.imageUrl) {
+              return (
+                <SkeletonImage
+                  source={{ uri: event.imageUrl.startsWith('http') ? event.imageUrl : `${BASE_URL}${event.imageUrl}` }}
+                  style={styles.eventImage}
+                  contentFit="cover"
+                  transition={300}
+                  cachePolicy="memory-disk"
+                />
+              );
+            }
+            return null;
+          };
+
+          if (hasMedia) {
+            // Event HAS media: Map -> User Header -> Media
+            return (
+              <>
+                <MapComponent />
+                <UserHeaderComponent />
+                <MediaComponent />
+              </>
+            );
+          } else {
+            // Event has NO media: Map -> User Header
+            return (
+              <>
+                <MapComponent />
+                <UserHeaderComponent />
+              </>
+            );
+          }
+        })()}
 
         {/* Interaction Bar */}
         <View style={[styles.interactionBar, { backgroundColor: theme.bg }]}>
@@ -644,15 +744,25 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               )}
             </TouchableOpacity>
 
+            {/* Share button - always visible */}
+            <TouchableOpacity
+              style={styles.interactionButton}
+              onPress={handleShareEvent}
+            >
+              <Ionicons name="share-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+
+            {/* Chat button for urgent events (non-owner) */}
             {event.isUrgent && event.userId !== currentUserId && (
               <TouchableOpacity
                 style={styles.interactionButton}
                 onPress={handleOpenChat}
               >
-                <Ionicons name="paper-plane-outline" size={24} color={theme.text} />
+                <Ionicons name="chatbubble-ellipses-outline" size={24} color={theme.text} />
               </TouchableOpacity>
             )}
 
+            {/* Inbox button for urgent events (owner) */}
             {event.isUrgent && event.userId === currentUserId && eventConversations.length > 0 && (
               <TouchableOpacity
                 style={styles.interactionButton}
@@ -678,34 +788,31 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               style={[
                 styles.statusToggleButton,
                 event.status === 'IN_PROGRESS'
-                  ? { backgroundColor: 'rgba(255, 149, 0, 0.15)', borderColor: '#FF9500' }
+                  ? { backgroundColor: 'rgba(255, 59, 48, 0.15)', borderColor: '#FF3B30' }
                   : { backgroundColor: 'rgba(52, 199, 89, 0.15)', borderColor: '#34C759' }
               ]}
               onPress={handleToggleStatus}
               activeOpacity={0.7}
             >
               <Ionicons
-                name={event.status === 'IN_PROGRESS' ? 'time' : 'checkmark-circle'}
+                name={event.status === 'IN_PROGRESS' ? 'close-circle' : 'refresh-circle'}
                 size={16}
-                color={event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759'}
+                color={event.status === 'IN_PROGRESS' ? '#FF3B30' : '#34C759'}
               />
               <Text style={[
                 styles.statusToggleText,
-                { color: event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759' }
+                { color: event.status === 'IN_PROGRESS' ? '#FF3B30' : '#34C759' }
               ]}>
-                {event.status === 'IN_PROGRESS' ? 'En progreso' : 'Cerrado'}
+                {event.status === 'IN_PROGRESS' ? 'Cerrar' : 'Reabrir'}
               </Text>
               <Ionicons
                 name="chevron-down"
                 size={14}
-                color={event.status === 'IN_PROGRESS' ? '#FF9500' : '#34C759'}
+                color={event.status === 'IN_PROGRESS' ? '#FF3B30' : '#34C759'}
               />
             </TouchableOpacity>
           ) : (
-            <View style={[styles.timeBadge, { backgroundColor: isDark ? '#2C2C2E' : '#f5f5f5' }]}>
-              <Ionicons name="time-outline" size={14} color={theme.textTertiary} />
-              <Text style={[styles.timeBadgeText, { color: theme.textTertiary }]}>{formatRelativeTime(event.createdAt)}</Text>
-            </View>
+            <Text style={[styles.timeText, { color: theme.textTertiary }]}>{formatRelativeTime(event.createdAt)}</Text>
           )}
         </View>
 
@@ -714,6 +821,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           <Text style={[styles.description, { color: theme.text }]}>
             <Text style={styles.descriptionUserName}>{event.user.name} </Text>
             {event.description}
+          </Text>
+          {/* Timestamp - Instagram style */}
+          <Text style={[styles.postTimestamp, { color: theme.textTertiary }]}>
+            {formatRelativeTime(event.createdAt)}
           </Text>
         </View>
 
@@ -1148,17 +1259,9 @@ const styles = StyleSheet.create({
   interactionCountActive: {
     color: '#ed4956',
   },
-  timeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  timeBadgeText: {
-    fontSize: 12,
+  timeText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   statusToggleButton: {
     flexDirection: 'row',
@@ -1176,7 +1279,7 @@ const styles = StyleSheet.create({
   // Image
   eventImage: {
     width: '100%',
-    height: 300,
+    height: 350,
     backgroundColor: '#f0f0f0',
   },
   // Description
@@ -1191,6 +1294,12 @@ const styles = StyleSheet.create({
   },
   descriptionUserName: {
     fontWeight: '600',
+  },
+  postTimestamp: {
+    fontSize: 12,
+    marginTop: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   // Device info
   deviceInfo: {
@@ -1314,6 +1423,71 @@ const styles = StyleSheet.create({
   repliesContainer: {
     marginTop: 12,
     gap: 12,
+  },
+  // Instagram-style comments
+  igCommentContainer: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    alignItems: 'flex-start',
+  },
+  igReplyContainer: {
+    marginLeft: 44,
+    paddingVertical: 6,
+  },
+  igCommentAvatarContainer: {
+    marginRight: 12,
+  },
+  igCommentContent: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  igCommentText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  igCommentUsername: {
+    fontWeight: '600',
+  },
+  igCommentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  igCommentTime: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  igCommentLikeCount: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  igCommentReply: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  igCommentLikeBtn: {
+    padding: 4,
+    marginTop: 4,
+  },
+  igRepliesContainer: {
+    marginTop: 12,
+  },
+  igRepliesLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    marginLeft: -44,
+    paddingLeft: 44,
+  },
+  igRepliesLineDash: {
+    width: 24,
+    height: 1,
+    marginRight: 8,
+  },
+  igRepliesLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   // Fixed Input
   fixedInputContainer: {

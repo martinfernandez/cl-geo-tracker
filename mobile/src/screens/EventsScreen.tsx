@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  Image,
   Dimensions,
   Share,
   Alert,
@@ -16,15 +15,19 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { eventApi, reactionApi, Event } from '../services/api';
+import { eventApi, reactionApi, Event, EventMedia } from '../services/api';
 import { BASE_URL } from '../config/environment';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { colors, radius } from '../theme/colors';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Svg, { Circle, Path, G } from 'react-native-svg';
 import { ObjectsPatternBackground } from '../components/ObjectsPatternBackground';
 import { FadeInView } from '../components/FadeInView';
+import { MediaCarousel } from '../components/MediaCarousel';
+import { EventMapPlaceholder } from '../components/EventMapPlaceholder';
+import { SkeletonImage } from '../components/SkeletonImage';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -43,6 +46,13 @@ const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; icon: st
   ACCIDENT: { label: 'Accidente', color: colors.warning.main, icon: 'car' },
   FIRE: { label: 'Incendio', color: '#FF2D55', icon: 'flame' },
   GENERAL: { label: 'General', color: colors.primary.main, icon: 'alert-circle' },
+};
+
+// Helper to detect if an imageUrl is a static map placeholder (not a real uploaded image)
+const isStaticMapUrl = (url: string | undefined | null): boolean => {
+  if (!url) return false;
+  // Detect Google Static Maps URLs or other known map placeholder patterns
+  return url.includes('maps.googleapis.com') || url.includes('staticmap');
 };
 
 // Format relative time like social feeds
@@ -156,6 +166,7 @@ export default function EventsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
   const { showSuccess, showError } = useToast();
+  const parentNavigation = useNavigation();
   const [events, setEvents] = useState<EventWithCounts[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -163,6 +174,26 @@ export default function EventsScreen({ navigation, route }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<EventWithCounts | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Ensure tab bar is always visible when this screen is focused
+  // This fixes the issue where tab bar stays hidden after canceling AddEvent
+  useFocusEffect(
+    useCallback(() => {
+      const parent = parentNavigation.getParent();
+      if (parent) {
+        parent.setOptions({
+          tabBarStyle: {
+            backgroundColor: theme.surface,
+            borderTopWidth: 1,
+            borderTopColor: theme.border,
+            height: 85,
+            paddingBottom: 20,
+            paddingTop: 12,
+          },
+        });
+      }
+    }, [parentNavigation, theme])
+  );
 
   useEffect(() => {
     loadEvents();
@@ -297,20 +328,61 @@ export default function EventsScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate('EventDetail', { eventId: item.id })}
           activeOpacity={0.85}
         >
-          {/* Image at the top - full width */}
-          {item.imageUrl && (
-            <View style={styles.imageContainer}>
-              <Image
-                source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
-                style={styles.eventImage}
-              />
-              {/* Time badge on image */}
-              <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
-                <Ionicons name="time-outline" size={12} color="#fff" />
-                <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
-              </View>
-            </View>
-          )}
+          {/* Media at the top - full width */}
+          <View style={styles.imageContainer}>
+            {(item as any).media && (item as any).media.length > 0 ? (
+              <>
+                <MediaCarousel
+                  media={(item as any).media.map((m: EventMedia) => ({
+                    id: m.id,
+                    type: m.type,
+                    url: m.url,
+                    thumbnailUrl: m.thumbnailUrl,
+                    order: m.order,
+                    duration: m.duration,
+                  }))}
+                  height={180}
+                  showIndicators={(item as any).media.length > 1}
+                  autoPlayVideos={false}
+                  compact={true}
+                />
+                {/* Time badge on media */}
+                <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
+                  <Ionicons name="time-outline" size={12} color="#fff" />
+                  <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
+                </View>
+              </>
+            ) : item.imageUrl && !isStaticMapUrl(item.imageUrl) ? (
+              <>
+                <SkeletonImage
+                  source={{ uri: item.imageUrl.startsWith('http') ? item.imageUrl : `${BASE_URL}${item.imageUrl}` }}
+                  style={styles.eventImage}
+                  contentFit="cover"
+                  transition={200}
+                  cachePolicy="memory-disk"
+                />
+                {/* Time badge on image */}
+                <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
+                  <Ionicons name="time-outline" size={12} color="#fff" />
+                  <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <EventMapPlaceholder
+                  latitude={item.latitude}
+                  longitude={item.longitude}
+                  style={styles.eventImage}
+                  markerColor={config.color}
+                />
+                {/* Time badge on map */}
+                <View style={[styles.timeBadgeOnImage, { backgroundColor: theme.overlay.dark }]}>
+                  <Ionicons name="time-outline" size={12} color="#fff" />
+                  <Text style={styles.timeBadgeText}>{formatRelativeTime(item.createdAt)}</Text>
+                </View>
+              </>
+            )}
+          </View>
 
           {/* Card content */}
           <View style={styles.cardContent}>
@@ -331,15 +403,6 @@ export default function EventsScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
               </View>
-              {/* Time on the right if no image */}
-              {!item.imageUrl && (
-                <View style={styles.timeContainer}>
-                  <Ionicons name="time-outline" size={12} color={theme.textTertiary} />
-                  <Text style={[styles.timeText, { color: theme.textTertiary }]}>
-                    {formatRelativeTime(item.createdAt)}
-                  </Text>
-                </View>
-              )}
             </View>
 
             {/* Description */}
